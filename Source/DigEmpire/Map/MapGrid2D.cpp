@@ -124,3 +124,12 @@ TArray<FIntPoint> UMapGrid2D::GetCellsForZone(int32 InZoneId) const
     return Result;
 }
 
+TArray<FRoomInfo> UMapGrid2D::GetRoomsForZone(int32 InZoneId) const
+{
+    TArray<FRoomInfo> Out;
+    for (const FRoomInfo& R : Rooms)
+    {
+        if (R.ZoneId == InZoneId) Out.Add(R);
+    }
+    return Out;
+}

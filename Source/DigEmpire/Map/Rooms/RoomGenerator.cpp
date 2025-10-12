@@ -1,5 +1,6 @@
 #include "RoomGenerator.h"
 #include "DigEmpire/Map/MapGrid2D.h"
+#include "RoomTypes.h"
 
 bool URoomGenerator::Generate(UMapGrid2D* MapGrid,
                               const TArray<int32>& ZoneLabels,
@@ -194,7 +195,13 @@ bool URoomGenerator::TryPlaceRoomInZone(UMapGrid2D* Map,
                 }
             }
 
-            // Success placing this room
+            // Success placing this room: record room info on the map
+            FRoomInfo Info;
+            Info.ZoneId = ZoneId;
+            Info.TopLeft = FIntPoint(x0, y0);
+            Info.Size = FIntPoint(RoomW, RoomH);
+            Info.Entrance = FIntPoint(entranceX, entranceY);
+            Map->AddRoom(Info);
             return true;
     };
 

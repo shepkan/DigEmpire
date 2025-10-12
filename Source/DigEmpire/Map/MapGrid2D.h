@@ -4,6 +4,7 @@
 #include "UObject/Object.h"
 #include "GameplayTagContainer.h"
 #include "Generation/ZoneBorderGenerator.h" // FZonePassage
+#include "Rooms/RoomTypes.h"                // FRoomInfo
 #include "MapGrid2D.generated.h"
 
 /** Single map cell data */
@@ -94,6 +95,16 @@ public:
     const TArray<FZonePassage>& GetPassages() const { return Passages; }
     void SetPassages(const TArray<FZonePassage>& InPassages) { Passages = InPassages; }
 
+    // Rooms API
+    UFUNCTION(BlueprintPure, Category="MapGrid|Rooms")
+    const TArray<FRoomInfo>& GetRooms() const { return Rooms; }
+
+    UFUNCTION(BlueprintPure, Category="MapGrid|Rooms")
+    TArray<FRoomInfo> GetRoomsForZone(int32 InZoneId) const;
+
+    UFUNCTION(BlueprintCallable, Category="MapGrid|Rooms")
+    void AddRoom(const FRoomInfo& Info) { Rooms.Add(Info); }
+
 	/** In-bounds check */
 	UFUNCTION(BlueprintPure, Category="MapGrid")
 	bool IsInBounds(int32 X, int32 Y) const
@@ -115,6 +126,10 @@ private:
 
     // Stored passages between zones
     TArray<FZonePassage> Passages;
+
+    // Stored generated rooms
+    UPROPERTY(Transient)
+    TArray<FRoomInfo> Rooms;
 
 	int32 Index(int32 X, int32 Y) const { return X + Y * SizeX; }
 };
