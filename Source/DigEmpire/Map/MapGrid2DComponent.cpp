@@ -8,6 +8,8 @@
 #include "Zones/ZoneGenSettings.h"
 #include "Rooms/RoomGenerator.h"
 #include "Rooms/RoomGenSettings.h"
+#include "Generation/CaveGenerator.h"
+#include "Generation/CaveGenSettings.h"
 
 UMapGrid2DComponent::UMapGrid2DComponent()
 {
@@ -94,6 +96,13 @@ void UMapGrid2DComponent::InitializeAndBuild()
 		{
 			URoomGenerator* RoomGen = NewObject<URoomGenerator>();
 			RoomGen->Generate(MapInstance, ZoneLabels, RoomSettings, BorderSettings);
+		}
+
+		// Optional: run per-zone cave cellular automata after rooms
+		if (CaveSettings)
+		{
+			UCaveGenerator* CaveGen = NewObject<UCaveGenerator>();
+			CaveGen->Generate(MapInstance, ZoneLabels, CaveSettings, BorderSettings);
 		}
 	}
 

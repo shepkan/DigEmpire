@@ -10,6 +10,7 @@ class UMapGrid2D;
 class UZoneGenSettings;
 class UZoneBorderSettings;
 class URoomGenSettings;
+class UCaveGenSettings;
 
 /**
  * Component that owns a UMapGrid2D instance.
@@ -35,12 +36,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="MapGrid|Init", meta=(ClampMin="1"));
 	TObjectPtr<UZoneGenSettings> ZoneSettings = nullptr;
 	
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="MapGrid|Init", meta=(ClampMin="1"));
-	TObjectPtr<UZoneBorderSettings> BorderSettings = nullptr;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="MapGrid|Init", meta=(ClampMin="1"));
+    TObjectPtr<UZoneBorderSettings> BorderSettings = nullptr;
 
-	/** Rooms generation settings (optional). */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="MapGrid|Init")
-	TObjectPtr<URoomGenSettings> RoomSettings = nullptr;
+    /** Rooms generation settings (optional). */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="MapGrid|Init")
+    TObjectPtr<URoomGenSettings> RoomSettings = nullptr;
+
+    /** Cave CA settings (optional). Runs after rooms, per-zone, with immutable walls/rooms/passages. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="MapGrid|Init")
+    TObjectPtr<UCaveGenSettings> CaveSettings = nullptr;
 
 	/** Map height (in cells). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="MapGrid|Init", meta=(ClampMin="1"))
