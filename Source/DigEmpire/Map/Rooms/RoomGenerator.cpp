@@ -79,6 +79,39 @@ bool URoomGenerator::TryPlaceRoomInZone(UMapGrid2D* Map,
             }
             if (!bFits) continue;
 
+            // Ensure a 1-cell free corridor around the room: all outside-neighboring cells must be in-bounds and empty.
+            if (!(x0 > 0 && y0 > 0 && (x0 + RoomW) < W && (y0 + RoomH) < H))
+            {
+                continue; // no clearance at map edge
+            }
+
+            auto IsFree = [&](int32 cx, int32 cy)->bool
+            {
+                FGameplayTag T; int32 D = 0;
+                return !Map->GetObjectAt(cx, cy, T, D);
+            };
+
+            const int32 xOutMin = x0 - 1;
+            const int32 xOutMax = x0 + RoomW;
+            const int32 yOutMin = y0 - 1;
+            const int32 yOutMax = y0 + RoomH;
+
+            bool bClearRing = true;
+            // Top and bottom outside rows (including corners)
+            for (int32 x = xOutMin; x <= xOutMax && bClearRing; ++x)
+            {
+                if (!Map->IsInBounds(x, yOutMin) || !IsFree(x, yOutMin)) { bClearRing = false; break; }
+                if (!Map->IsInBounds(x, yOutMax) || !IsFree(x, yOutMax)) { bClearRing = false; break; }
+            }
+            // Left and right outside columns
+            for (int32 y = y0; y < y0 + RoomH && bClearRing; ++y)
+            {
+                if (!Map->IsInBounds(xOutMin, y) || !IsFree(xOutMin, y)) { bClearRing = false; break; }
+                if (!Map->IsInBounds(xOutMax, y) || !IsFree(xOutMax, y)) { bClearRing = false; break; }
+            }
+
+            if (!bClearRing) continue;
+
             // Choose a single entrance on the room border such that outside cell is not a wall/object.
             int32 entranceX = -1, entranceY = -1;
             auto IsOutsideFree = [&](int32 ox, int32 oy) -> bool
