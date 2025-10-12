@@ -1,6 +1,5 @@
 #include "ZoneConnectivityFixer.h"
 #include "DigEmpire/Map/MapGrid2D.h"
-#include "Rooms/RoomTypes.h"
 
 bool UZoneConnectivityFixer::Generate(UMapGrid2D* MapGrid,
                                       const TArray<int32>& ZoneLabels,
@@ -167,17 +166,17 @@ void UZoneConnectivityFixer::BuildMasksForZone(UMapGrid2D* Map,
     const TArray<FRoomInfo>& Rooms = Map->GetRooms();
     const TArray<FZonePassage>& Passages = Map->GetPassages();
 
-    TSet<FIntPoint> ImmutableEmpty;
+    TSet<FIntPoint> RoomInterior; // treat as non-traversable for connectivity (immutable block)
     TSet<FIntPoint> RoomWalls;
 
-    // Rooms: interiors immutable empty; walls immutable wall
+    // Rooms: interiors NON-TRAVERSABLE; walls immutable wall; entrance is also non-traversable here
     for (const FRoomInfo& R : Rooms)
     {
         if (R.ZoneId != ZoneId) continue;
         for (int32 dy = 0; dy < R.Size.Y; ++dy)
         for (int32 dx = 0; dx < R.Size.X; ++dx)
         {
-            ImmutableEmpty.Add(FIntPoint(R.TopLeft.X + dx, R.TopLeft.Y + dy));
+            RoomInterior.Add(FIntPoint(R.TopLeft.X + dx, R.TopLeft.Y + dy));
         }
         const int x0=R.TopLeft.X, y0=R.TopLeft.Y, w=R.Size.X, h=R.Size.Y;
         // Edges
@@ -191,13 +190,15 @@ void UZoneConnectivityFixer::BuildMasksForZone(UMapGrid2D* Map,
             RoomWalls.Add(FIntPoint(x0, y0+dy));
             RoomWalls.Add(FIntPoint(x0+w-1, y0+dy));
         }
-        RoomWalls.Remove(R.Entrance); // entrance is open
+        // Entrance: mark as non-traversable in connectivity (do not go through door)
+        RoomWalls.Add(R.Entrance);
+        RoomInterior.Add(R.Entrance);
     }
 
-    // Passages: immutable empty
+    // Passages: OPEN (targets to reach); do not modify openness here
     for (const FZonePassage& P : Passages)
     {
-        for (const FIntPoint& C : P.Cells) ImmutableEmpty.Add(C);
+        for (const FIntPoint& C : P.Cells) { /* keep open */ }
     }
 
     for (int32 y=0; y<H; ++y)
@@ -206,11 +207,8 @@ void UZoneConnectivityFixer::BuildMasksForZone(UMapGrid2D* Map,
         const int id = Idx(x,y,W);
         if (Labels[id] != ZoneId) { ImmWall[id]=1; continue; } // treat outside as wall
 
-        // Immutable empty
-        if (ImmutableEmpty.Contains(FIntPoint(x,y)))
-        {
-            Open[id]=1; continue;
-        }
+        // Room interior/door: non-traversable, immutable
+        if (RoomInterior.Contains(FIntPoint(x,y))) { ImmWall[id]=1; continue; }
 
         // Object check
         FGameplayTag Obj; int32 Dur=0; const bool bHasObj = Map->GetObjectAt(x,y,Obj,Dur);
@@ -237,4 +235,3 @@ void UZoneConnectivityFixer::BuildMasksForZone(UMapGrid2D* Map,
         }
     }
 }
-
