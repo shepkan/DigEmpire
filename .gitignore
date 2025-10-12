@@ -88,3 +88,8 @@ Plugins/*/Intermediate/
 *.pdb
 *.ipdb
 *.obj
+# Recursive ignores for UE folders anywhere
+**/Binaries/
+**/Intermediate/
+**/Saved/
+**/DerivedDataCache/

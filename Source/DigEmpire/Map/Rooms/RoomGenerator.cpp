@@ -79,12 +79,42 @@ bool URoomGenerator::TryPlaceRoomInZone(UMapGrid2D* Map,
             }
             if (!bFits) continue;
 
-            // Choose a single entrance on the room border: pick middle of one side (prefer south side).
-            const int32 ex = x0 + RoomW / 2;
-            const int32 ey = y0 + RoomH; // outside to the south
-            // Entrance cell on the border we leave open (south edge center)
-            const int32 entranceX = x0 + RoomW / 2;
-            const int32 entranceY = y0 + RoomH - 1; // south edge cell inside the room border
+            // Choose a single entrance on the room border such that outside cell is not a wall/object.
+            int32 entranceX = -1, entranceY = -1;
+            auto IsOutsideFree = [&](int32 ox, int32 oy) -> bool
+            {
+                if (!Map->IsInBounds(ox, oy)) return false;
+                FGameplayTag T; int32 D = 0;
+                return !Map->GetObjectAt(ox, oy, T, D);
+            };
+
+            // Try south, then north, west, east.
+            {
+                const int32 cx = x0 + RoomW / 2;
+                const int32 southInY = y0 + RoomH - 1;
+                if (IsOutsideFree(cx, southInY + 1)) { entranceX = cx; entranceY = southInY; }
+            }
+            if (entranceX < 0)
+            {
+                const int32 cx = x0 + RoomW / 2;
+                const int32 northInY = y0;
+                if (IsOutsideFree(cx, northInY - 1)) { entranceX = cx; entranceY = northInY; }
+            }
+            if (entranceX < 0)
+            {
+                const int32 cy = y0 + RoomH / 2;
+                const int32 westInX = x0;
+                if (IsOutsideFree(westInX - 1, cy)) { entranceX = westInX; entranceY = cy; }
+            }
+            if (entranceX < 0)
+            {
+                const int32 cy = y0 + RoomH / 2;
+                const int32 eastInX = x0 + RoomW - 1;
+                if (IsOutsideFree(eastInX + 1, cy)) { entranceX = eastInX; entranceY = cy; }
+            }
+
+            // If no valid entrance found, skip this placement.
+            if (entranceX < 0) continue;
 
             // Build walls along the rectangle border, skipping the entrance cell.
             const FGameplayTag WallTag = BorderSettings->WallObjectTag;
@@ -133,4 +163,3 @@ bool URoomGenerator::TryPlaceRoomInZone(UMapGrid2D* Map,
 
     return false;
 }
-
