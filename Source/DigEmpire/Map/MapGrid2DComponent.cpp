@@ -10,6 +10,7 @@
 #include "Rooms/RoomGenSettings.h"
 #include "Generation/CaveGenerator.h"
 #include "Generation/CaveGenSettings.h"
+#include "Generation/ZoneConnectivityFixer.h"
 
 UMapGrid2DComponent::UMapGrid2DComponent()
 {
@@ -103,6 +104,12 @@ void UMapGrid2DComponent::InitializeAndBuild()
 		{
 			UCaveGenerator* CaveGen = NewObject<UCaveGenerator>();
 			CaveGen->Generate(MapInstance, ZoneLabels, CaveSettings, BorderSettings);
+		}
+
+		// Connect open areas inside each zone to the largest area using minimal carving
+		{
+			UZoneConnectivityFixer* Fixer = NewObject<UZoneConnectivityFixer>();
+			Fixer->Generate(MapInstance, ZoneLabels, BorderSettings);
 		}
 	}
 
