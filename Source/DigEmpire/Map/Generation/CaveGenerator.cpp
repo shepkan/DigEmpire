@@ -110,6 +110,7 @@ void UCaveGenerator::BuildZoneMasks(UMapGrid2D* Map,
 
     // Precompute quick lookup for rooms and passages (immutable empty)
     TSet<FIntPoint> ImmutableEmpty;
+    RoomWallCells.Reset();
     for (const FRoomInfo& R : Rooms)
     {
         if (R.ZoneId != ZoneId) continue;
@@ -117,6 +118,34 @@ void UCaveGenerator::BuildZoneMasks(UMapGrid2D* Map,
         for (int32 dx = 0; dx < R.Size.X; ++dx)
         {
             ImmutableEmpty.Add(FIntPoint(R.TopLeft.X + dx, R.TopLeft.Y + dy));
+        }
+
+        // Collect actual wall cells placed around the room (exclude entrance left open)
+        const int32 x0 = R.TopLeft.X;
+        const int32 y0 = R.TopLeft.Y;
+        const int32 w = R.Size.X;
+        const int32 h = R.Size.Y;
+        // Top and bottom edges
+        for (int32 dx = 0; dx < w; ++dx)
+        {
+            const int32 xt = x0 + dx;
+            const int32 yt = y0;
+            const int32 xb = x0 + dx;
+            const int32 yb = y0 + h - 1;
+            FGameplayTag T; int32 D;
+            if (Map->GetObjectAt(xt, yt, T, D) && T == BorderSettings->WallObjectTag) RoomWallCells.Add(FIntPoint(xt, yt));
+            if (Map->GetObjectAt(xb, yb, T, D) && T == BorderSettings->WallObjectTag) RoomWallCells.Add(FIntPoint(xb, yb));
+        }
+        // Left and right edges (skip corners)
+        for (int32 dy2 = 1; dy2 < h - 1; ++dy2)
+        {
+            const int32 xl = x0;
+            const int32 yl = y0 + dy2;
+            const int32 xr = x0 + w - 1;
+            const int32 yr = y0 + dy2;
+            FGameplayTag T; int32 D;
+            if (Map->GetObjectAt(xl, yl, T, D) && T == BorderSettings->WallObjectTag) RoomWallCells.Add(FIntPoint(xl, yl));
+            if (Map->GetObjectAt(xr, yr, T, D) && T == BorderSettings->WallObjectTag) RoomWallCells.Add(FIntPoint(xr, yr));
         }
     }
     for (const FZonePassage& P : Passages)
@@ -195,7 +224,12 @@ int32 UCaveGenerator::CountNeighbors8(const TArray<int8>& Fixed,
         }
         else
         {
-            if (Fixed[id] == 1) ++Count; // immutable wall
+            if (Fixed[id] == 1)
+            {
+                // Immutable wall counts as a wall; if it's a room wall, add extra weight
+                ++Count;
+                if (RoomWallCells.Contains(FIntPoint(nx, ny))) ++Count; // bias near room walls
+            }
         }
     }
     return Count;

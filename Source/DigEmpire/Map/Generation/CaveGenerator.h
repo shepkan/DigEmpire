@@ -37,5 +37,7 @@ private:
                           int32 ZoneId,
                           int32 X, int32 Y,
                           int32 W, int32 H) const;
-};
 
+    // Cached for current zone to bias walls near room walls
+    TSet<FIntPoint> RoomWallCells;
+};
