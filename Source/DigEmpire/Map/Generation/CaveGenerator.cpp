@@ -70,8 +70,8 @@ bool UCaveGenerator::Generate(UMapGrid2D* MapGrid,
                     Nxt[id] = (n >= Settings->BirthLimit) ? 1 : 0;
                 }
             }
-            // swap
-            Cur.Swap(Nxt);
+            // swap buffers
+            Swap(Cur, Nxt);
         }
 
         // Apply back to map for mutable cells only
@@ -200,4 +200,3 @@ int32 UCaveGenerator::CountNeighbors8(const TArray<int8>& Fixed,
     }
     return Count;
 }
-
