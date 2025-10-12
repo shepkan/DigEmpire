@@ -61,6 +61,17 @@ bool URoomGenerator::TryPlaceRoomInZone(UMapGrid2D* Map,
 {
     const int32 W = Size.X, H = Size.Y;
     if (RoomW <= 0 || RoomH <= 0 || RoomW > W || RoomH > H) return false;
+    // Build a quick lookup of passage cells belonging to this zone
+    TSet<FIntPoint> ZonePassageCells;
+    for (const FZonePassage& P : Map->GetPassages())
+    {
+        for (const FIntPoint& C : P.Cells)
+        {
+            const int id = Idx(C.X, C.Y, W);
+            if (id < 0 || id >= W*H) continue;
+            if (Labels[id] == ZoneId) ZonePassageCells.Add(C);
+        }
+    }
     auto TryAt = [&](int32 x0, int32 y0)->bool
     {
             bool bFits = true;
@@ -78,6 +89,11 @@ bool URoomGenerator::TryPlaceRoomInZone(UMapGrid2D* Map,
                     // Also ensure there is no wall/object currently.
                     int32 DummyDur = 0; FGameplayTag DummyTag;
                     if (Map->GetObjectAt(x, y, DummyTag, DummyDur))
+                    {
+                        bFits = false; break;
+                    }
+                    // Do not overlap passage cells with the room interior
+                    if (ZonePassageCells.Contains(FIntPoint(x, y)))
                     {
                         bFits = false; break;
                     }
@@ -117,6 +133,20 @@ bool URoomGenerator::TryPlaceRoomInZone(UMapGrid2D* Map,
             }
 
             if (!bClearRing) return false;
+
+            // Ensure the room border (where walls would be placed) does not overlap passage cells
+            // Top and bottom edges
+            for (int32 dx = 0; dx < RoomW; ++dx)
+            {
+                if (ZonePassageCells.Contains(FIntPoint(x0 + dx, y0))) return false;
+                if (ZonePassageCells.Contains(FIntPoint(x0 + dx, y0 + RoomH - 1))) return false;
+            }
+            // Left and right edges (skip corners)
+            for (int32 dy = 1; dy < RoomH - 1; ++dy)
+            {
+                if (ZonePassageCells.Contains(FIntPoint(x0, y0 + dy))) return false;
+                if (ZonePassageCells.Contains(FIntPoint(x0 + RoomW - 1, y0 + dy))) return false;
+            }
 
             // Choose a single entrance on the room border such that outside cell is not a wall/object.
             int32 entranceX = -1, entranceY = -1;

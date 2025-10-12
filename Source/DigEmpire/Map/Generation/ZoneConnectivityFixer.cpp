@@ -148,8 +148,71 @@ bool UZoneConnectivityFixer::Generate(UMapGrid2D* MapGrid,
             if (!ConnectOne()) break;
             remaining = 0; for (int i=0;i<compCount;++i) if (!compConnected[i]) ++remaining;
         }
+
+        // debug visualization removed
     }
 
+    return true;
+}
+
+bool UZoneConnectivityFixer::IsZoneConnected(const UMapGrid2D* MapGrid,
+                                             const TArray<int32>& ZoneLabels,
+                                             int32 ZoneId) const
+{
+    if (!MapGrid) return false;
+    const FIntPoint Size = MapGrid->GetSize();
+    const int32 W = Size.X, H = Size.Y;
+    const int32 N = W*H;
+    if (ZoneLabels.Num() != N) return false;
+
+    const TArray<FZonePassage>& Passages = MapGrid->GetPassages();
+
+    auto IsOpen = [&](int x, int y)->bool
+    {
+        if (x<0||y<0||x>=W||y>=H) return false;
+        const int id = Idx(x,y,W);
+        if (ZoneLabels[id] != ZoneId) return false;
+        FGameplayTag T; int32 D=0; 
+        if (!MapGrid->GetObjectAt(x,y,T,D)) return true; // no wall
+        // If it's a passage cell, treat as open even if object existed (shouldn't normally)
+        for (const FZonePassage& P : Passages)
+        {
+            for (const FIntPoint& C : P.Cells)
+            {
+                if (C.X==x && C.Y==y) return true;
+            }
+        }
+        return false;
+    };
+
+    // Find first open cell
+    int start=-1;
+    for (int y=0;y<H && start==-1;++y)
+    for (int x=0;x<W && start==-1;++x)
+    {
+        if (IsOpen(x,y)) start = Idx(x,y,W);
+    }
+    if (start==-1) return true; // no open cells -> trivially connected
+
+    TArray<uint8> Vis; Vis.Init(0,N);
+    TQueue<int32> Q; Q.Enqueue(start); Vis[start]=1;
+    auto Push=[&](int nx,int ny){ if (IsOpen(nx,ny)){ const int id=Idx(nx,ny,W); if(!Vis[id]){ Vis[id]=1; Q.Enqueue(id);} } };
+    while(!Q.IsEmpty())
+    {
+        int32 u; Q.Dequeue(u);
+        const int ux=u%W, uy=u/W;
+        Push(ux+1,uy); Push(ux-1,uy); Push(ux,uy+1); Push(ux,uy-1);
+    }
+
+    // Verify all open cells visited
+    for (int y=0;y<H;++y)
+    for (int x=0;x<W;++x)
+    {
+        if (IsOpen(x,y))
+        {
+            if (!Vis[Idx(x,y,W)]) return false;
+        }
+    }
     return true;
 }
 

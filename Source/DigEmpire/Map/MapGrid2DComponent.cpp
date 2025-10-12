@@ -90,6 +90,15 @@ void UMapGrid2DComponent::InitializeAndBuild()
 		{
 			// Store passages on the map for later queries
 			MapInstance->SetPassages(BorderGen->GetPassages());
+
+			// Validate connectivity per zone (including passage cells)
+			UZoneConnectivityFixer* Checker = NewObject<UZoneConnectivityFixer>();
+			int32 MaxZoneId = 0; for (int v : ZoneLabels) if (v > MaxZoneId) MaxZoneId = v;
+			for (int32 z = 0; z <= MaxZoneId; ++z)
+			{
+				const bool bZoneConnected = Checker->IsZoneConnected(MapInstance, ZoneLabels, z);
+				// Optionally log/handle if not connected.
+			}
 		}
 
 		// Optional: place rooms inside zones using RoomSettings
@@ -105,6 +114,8 @@ void UMapGrid2DComponent::InitializeAndBuild()
 			UCaveGenerator* CaveGen = NewObject<UCaveGenerator>();
 			CaveGen->Generate(MapInstance, ZoneLabels, CaveSettings, BorderSettings);
 		}
+
+		// (debug visualization removed)
 
 		// Connect open areas inside each zone to the largest area using minimal carving
 		{

@@ -150,7 +150,7 @@ void UCaveGenerator::BuildZoneMasks(UMapGrid2D* Map,
     }
     for (const FZonePassage& P : Passages)
     {
-        // Passages connect two zones; we treat carved cells as immutable empty for both
+        // Passages connect two zones; treat carved cells as immutable empty for CA
         for (const FIntPoint& C : P.Cells)
         {
             ImmutableEmpty.Add(C);
