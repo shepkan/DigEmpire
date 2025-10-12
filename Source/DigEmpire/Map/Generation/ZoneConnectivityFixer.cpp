@@ -1,30 +1,4 @@
 #include "ZoneConnectivityFixer.h"
-
-        // Force-open the outside cell in front of room entrance (if any)
-        if (DoorFronts.Contains(FIntPoint(x,y)))
-        {
-            // If mutable wall, remove it on the map and mark open
-            if (MutWall[id])
-            {
-                Map->RemoveObjectAt(x, y);
-                MutWall[id] = 0;
-            }
-            ImmWall[id] = 0;
-            Open[id] = 1;
-        }
-
-        // Force-open the outside cell in front of room entrance (if any)
-        if (DoorFronts.Contains(FIntPoint(x,y)))
-        {
-            // If mutable wall, remove it on the map and mark open
-            if (MutWall[id])
-            {
-                Map->RemoveObjectAt(x, y);
-                MutWall[id] = 0;
-            }
-            ImmWall[id] = 0;
-            Open[id] = 1;
-        }
 #include "DigEmpire/Map/MapGrid2D.h"
 
 bool UZoneConnectivityFixer::Generate(UMapGrid2D* MapGrid,
@@ -256,7 +230,6 @@ void UZoneConnectivityFixer::BuildMasksForZone(UMapGrid2D* Map,
     TSet<FIntPoint> RoomInterior; // treat as non-traversable for connectivity (immutable block)
     TSet<FIntPoint> RoomWalls;
 
-	TSet<FIntPoint> DoorFronts;   // outside cells adjacent to room entrances that must be forced open
     // Rooms: interiors NON-TRAVERSABLE; walls immutable wall; entrance is also non-traversable here
     for (const FRoomInfo& R : Rooms)
     {
@@ -282,19 +255,6 @@ void UZoneConnectivityFixer::BuildMasksForZone(UMapGrid2D* Map,
         RoomWalls.Add(R.Entrance);
         RoomInterior.Add(R.Entrance);
     }
-
-        // Find outside cell adjacent to entrance within the same zone and mark it to be opened
-        const FIntPoint E = R.Entrance;
-        const FIntPoint N4[4] = { FIntPoint(E.X+1,E.Y), FIntPoint(E.X-1,E.Y), FIntPoint(E.X,E.Y+1), FIntPoint(E.X,E.Y-1) };
-        for (const FIntPoint& n : N4)
-        {
-            if (n.X < 0 || n.Y < 0 || n.X >= W || n.Y >= H) continue;
-            if (RoomInterior.Contains(n)) continue; // still inside the room
-            // Only consider cells belonging to the same zone
-            if (Map->GetZoneAt(n.X, n.Y) != ZoneId) continue;
-            DoorFronts.Add(n);
-            break; // one outside cell is enough
-        }
 
     // Passages: OPEN (targets to reach); do not modify openness here
     for (const FZonePassage& P : Passages)
@@ -333,18 +293,6 @@ void UZoneConnectivityFixer::BuildMasksForZone(UMapGrid2D* Map,
         else
         {
             Open[id]=1; // empty cell
-        }
-        // Force-open the outside cell in front of room entrance (if any)
-        if (DoorFronts.Contains(FIntPoint(x,y)))
-        {
-            // If mutable wall, remove it on the map and mark open
-            if (MutWall[id])
-            {
-                Map->RemoveObjectAt(x, y);
-                MutWall[id] = 0;
-            }
-            ImmWall[id] = 0;
-            Open[id] = 1;
         }
     }
 }
