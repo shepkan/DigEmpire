@@ -222,30 +222,7 @@ void UZoneBorderGenerator::ChooseAndCarvePassages(
 			Passages.Add(MoveTemp(Pass));
 			DegreeNow[Key.X]++; DegreeNow[Key.Y]++;
 
-			// Assign each passage cell to the adjacent majority zone (A or B) based on 4-neighbors
-			for (const FIntPoint& Cell : Passages.Last().Cells)
-			{
-				const int32 lid = Idx(Cell.X, Cell.Y, CachedSize.X);
-				if (lid < 0 || lid >= CachedLabels.Num()) continue;
-				int32 countA = 0, countB = 0;
-				const FIntPoint N4[4] = { FIntPoint(Cell.X+1,Cell.Y), FIntPoint(Cell.X-1,Cell.Y), FIntPoint(Cell.X,Cell.Y+1), FIntPoint(Cell.X,Cell.Y-1) };
-				for (const FIntPoint& n : N4)
-				{
-					if (!InBounds(n.X, n.Y)) continue;
-					const int32 nid = Idx(n.X, n.Y, CachedSize.X);
-					if (nid < 0 || nid >= CachedLabels.Num()) continue;
-					const int32 z = CachedLabels[nid];
-					if (z == Key.X) ++countA; else if (z == Key.Y) ++countB;
-				}
-				int32 target = CachedLabels[lid];
-				if (countA > countB) target = Key.X; else if (countB > countA) target = Key.Y; // tie: keep current
-				if (target != CachedLabels[lid])
-				{
-					CachedLabels[lid] = target;
-					Map->SetZoneAt(Cell.X, Cell.Y, target);
-				}
-			}
-
+			// (no zone reassignment for passage cells)
 			// Update protection mask: passage cells + dilation to protect from any walls & enforce spacing
 			for (const FIntPoint& c : Passages.Last().Cells) PassageMask.Add(c);
 			DilateMask(PassageMask, FMath::Max(0, Settings->BorderThickness - 1)); // shield from thick borders
