@@ -129,26 +129,26 @@ bool URoomGenerator::TryPlaceRoomInZone(UMapGrid2D* Map,
 
             // Build a list of candidate entrance cells along the border where the outside cell is free.
             TArray<FIntPoint> Candidates;
-            // Top edge (north)
-            for (int32 dx = 0; dx < RoomW; ++dx)
+            // Top edge (north) — skip corners
+            for (int32 dx = 1; dx < RoomW - 1; ++dx)
             {
                 const int32 x = x0 + dx; const int32 y = y0;
                 if (IsOutsideFree(x, y - 1)) Candidates.Add(FIntPoint(x, y));
             }
-            // Bottom edge (south)
-            for (int32 dx = 0; dx < RoomW; ++dx)
+            // Bottom edge (south) — skip corners
+            for (int32 dx = 1; dx < RoomW - 1; ++dx)
             {
                 const int32 x = x0 + dx; const int32 y = y0 + RoomH - 1;
                 if (IsOutsideFree(x, y + 1)) Candidates.Add(FIntPoint(x, y));
             }
-            // Left edge (west)
-            for (int32 dy = 0; dy < RoomH; ++dy)
+            // Left edge (west) — skip corners
+            for (int32 dy = 1; dy < RoomH - 1; ++dy)
             {
                 const int32 x = x0; const int32 y = y0 + dy;
                 if (IsOutsideFree(x - 1, y)) Candidates.Add(FIntPoint(x, y));
             }
-            // Right edge (east)
-            for (int32 dy = 0; dy < RoomH; ++dy)
+            // Right edge (east) — skip corners
+            for (int32 dy = 1; dy < RoomH - 1; ++dy)
             {
                 const int32 x = x0 + RoomW - 1; const int32 y = y0 + dy;
                 if (IsOutsideFree(x + 1, y)) Candidates.Add(FIntPoint(x, y));
