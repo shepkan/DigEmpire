@@ -1,4 +1,4 @@
-﻿// MapGrid2DComponent.cpp
+// MapGrid2DComponent.cpp
 #include "MapGrid2DComponent.h"
 #include "MapGrid2D.h"
 #include "DigEmpire/BusEvents/MapGrid2DMessages.h"
@@ -93,15 +93,6 @@ void UMapGrid2DComponent::InitializeAndBuild()
 
 
 
-			// Validate connectivity per zone (including passage cells)
-			UZoneConnectivityFixer* Checker = NewObject<UZoneConnectivityFixer>();
-			int32 MaxZoneId = 0; for (int v : ZoneLabels) if (v > MaxZoneId) MaxZoneId = v;
-			for (int32 z = 0; z <= MaxZoneId; ++z)
-			{
-				const bool bZoneConnected = Checker->IsZoneConnected(MapInstance, z);
-				// Optionally log/handle if not connected.
-			}
-		}
 
 		// Optional: place rooms inside zones using RoomSettings
 		if (RoomSettings)
