@@ -1,0 +1,90 @@
+# ----------------------------
+# Unreal Engine 5 .gitignore
+# ----------------------------
+
+# Build folders
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+Build/
+
+# User-specific settings
+*.suo
+*.user
+*.userprefs
+*.sln.docstates
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+
+# Mac and Linux build artifacts
+*.DS_Store
+*.app/
+*.dSYM/
+*.so
+*.dylib
+*.ko
+
+# Backup / autosave
+*.bak
+*.tmp
+*.temp
+*.log
+*.old
+*.orig
+*.backup
+*.swp
+
+# Crash and debug files
+*.dmp
+*.pdb
+
+# Unreal auto-generated project files
+.vscode/
+.vs/
+.idea/
+
+# Config backups
+Config/DefaultEditorPerProjectUserSettings.ini
+Config/DefaultEditorUserSettings.ini
+
+# Ignore local plugins build data
+Plugins/*/Binaries/
+Plugins/*/Intermediate/
+Plugins/*/Saved/
+
+# Ignore local content cache (optional)
+# Uncomment this if you use source control for assets only
+# Content/*
+
+# If you’re using Rider
+.idea/
+
+# Ignore engine if using source build
+Engine/
+
+# Optional: ignore large temporary assets
+*.uasset.tmp
+*.umap.tmp
+
+# UE5 build/temps
+Binaries/
+Intermediate/
+Saved/
+DerivedDataCache/
+
+# Плагины (генерация)
+Plugins/*/Binaries/
+Plugins/*/Intermediate/
+
+# IDE кэш
+.vs/
+*.VC.db
+*.VC.opendb
+
+# Отладочные символы и крупные базы
+*.pdb
+*.ipdb
+*.obj

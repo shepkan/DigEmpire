@@ -1,0 +1,14 @@
+/NOLOGO
+/errorReport:prompt
+/MACHINE:x64
+/SUBSYSTEM:WINDOWS
+/DEF
+/NAME:"UnrealEditor-GameplayMessageNodes.dll"
+/IGNORE:4221
+/NODEFAULTLIB
+"D:/UE5/DigEmpire/Intermediate/Build/Win64/x64/DigEmpireEditor/Development/UnrealEd/SharedPCH.UnrealEd.Project.ValApi.ValExpApi.Cpp20.h.obj"
+"D:/UE5/DigEmpire/Plugins/GameplayMessageRouter/Intermediate/Build/Win64/x64/UnrealEditor/Development/GameplayMessageNodes/Module.GameplayMessageNodes.cpp.obj"
+"D:/UE5/DigEmpire/Plugins/GameplayMessageRouter/Intermediate/Build/Win64/x64/UnrealEditor/Development/GameplayMessageNodes/GameplayMessageNodesModule.cpp.obj"
+"D:/UE5/DigEmpire/Plugins/GameplayMessageRouter/Intermediate/Build/Win64/x64/UnrealEditor/Development/GameplayMessageNodes/K2Node_AsyncAction_ListenForGameplayMessages.cpp.obj"
+"D:/UE5/DigEmpire/Plugins/GameplayMessageRouter/Intermediate/Build/Win64/x64/UnrealEditor/Development/GameplayMessageNodes/Default.rc2.res"
+/OUT:"D:/UE5/DigEmpire/Plugins/GameplayMessageRouter/Intermediate/Build/Win64/x64/UnrealEditor/Development/GameplayMessageNodes/UnrealEditor-GameplayMessageNodes.lib"
