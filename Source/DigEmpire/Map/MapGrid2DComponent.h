@@ -9,6 +9,7 @@
 class UMapGrid2D;
 class UZoneGenSettings;
 class UZoneBorderSettings;
+class URoomGenSettings;
 
 /**
  * Component that owns a UMapGrid2D instance.
@@ -36,6 +37,10 @@ public:
 	
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="MapGrid|Init", meta=(ClampMin="1"));
 	TObjectPtr<UZoneBorderSettings> BorderSettings = nullptr;
+
+	/** Rooms generation settings (optional). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="MapGrid|Init")
+	TObjectPtr<URoomGenSettings> RoomSettings = nullptr;
 
 	/** Map height (in cells). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="MapGrid|Init", meta=(ClampMin="1"))

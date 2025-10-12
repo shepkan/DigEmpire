@@ -6,6 +6,8 @@
 #include "Generation/ZoneBorderGenerator.h"
 #include "Zones/MapZoneGenerator.h"
 #include "Zones/ZoneGenSettings.h"
+#include "Rooms/RoomGenerator.h"
+#include "Rooms/RoomGenSettings.h"
 
 UMapGrid2DComponent::UMapGrid2DComponent()
 {
@@ -85,6 +87,13 @@ void UMapGrid2DComponent::InitializeAndBuild()
 		{
 			// Store passages on the map for later queries
 			MapInstance->SetPassages(BorderGen->GetPassages());
+		}
+
+		// Optional: place rooms inside zones using RoomSettings
+		if (RoomSettings)
+		{
+			URoomGenerator* RoomGen = NewObject<URoomGenerator>();
+			RoomGen->Generate(MapInstance, ZoneLabels, RoomSettings, BorderSettings);
 		}
 	}
 
