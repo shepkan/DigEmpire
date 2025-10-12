@@ -91,6 +91,21 @@ void UMapGrid2DComponent::InitializeAndBuild()
 			// Store passages on the map for later queries
 			MapInstance->SetPassages(BorderGen->GetPassages());
 
+			// Reflect last passage cell zone flip into ZoneLabels for downstream systems
+			{
+				const TArray<FZonePassage>& Passages = MapInstance->GetPassages();
+				const FIntPoint S = MapInstance->GetSize();
+				for (const FZonePassage& P : Passages)
+				{
+					if (P.Cells.Num() == 0) continue;
+					const FIntPoint Last = P.Cells.Last();
+					if (Last.X >= 0 && Last.Y >= 0 && Last.X < S.X && Last.Y < S.Y)
+					{
+						ZoneLabels[Last.X + Last.Y * S.X] = P.ZoneB;
+					}
+				}
+			}
+
 			// Validate connectivity per zone (including passage cells)
 			UZoneConnectivityFixer* Checker = NewObject<UZoneConnectivityFixer>();
 			int32 MaxZoneId = 0; for (int v : ZoneLabels) if (v > MaxZoneId) MaxZoneId = v;

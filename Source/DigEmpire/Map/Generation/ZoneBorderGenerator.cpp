@@ -222,6 +222,20 @@ void UZoneBorderGenerator::ChooseAndCarvePassages(
 			Passages.Add(MoveTemp(Pass));
 			DegreeNow[Key.X]++; DegreeNow[Key.Y]++;
 
+			// Ensure the last cell of the passage belongs to the destination zone (ZoneB)
+			if (Passages.Last().Cells.Num() > 0)
+			{
+				const FIntPoint LastCell = Passages.Last().Cells.Last();
+				const int32 lid = Idx(LastCell.X, LastCell.Y, CachedSize.X);
+				if (lid >= 0 && lid < CachedLabels.Num())
+				{
+					CachedLabels[lid] = Key.Y;
+				}
+
+				// Also update the map's per-cell zone id if available
+				Map->SetZoneAt(LastCell.X, LastCell.Y, Key.Y);
+			}
+
 			// Update protection mask: passage cells + dilation to protect from any walls & enforce spacing
 			for (const FIntPoint& c : Passages.Last().Cells) PassageMask.Add(c);
 			DilateMask(PassageMask, FMath::Max(0, Settings->BorderThickness - 1)); // shield from thick borders
