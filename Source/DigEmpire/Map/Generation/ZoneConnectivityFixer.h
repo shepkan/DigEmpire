@@ -21,7 +21,6 @@ class UZoneConnectivityFixer : public UObject
     // Returns true if all open cells (no wall object) in the zone are connected, including passage cells.
     UFUNCTION(BlueprintPure, Category="Zones")
     bool IsZoneConnected(const UMapGrid2D* MapGrid,
-                         const TArray<int32>& ZoneLabels,
                          int32 ZoneId) const;
     UFUNCTION(BlueprintCallable, Category="Zones")
     bool Generate(UMapGrid2D* MapGrid,

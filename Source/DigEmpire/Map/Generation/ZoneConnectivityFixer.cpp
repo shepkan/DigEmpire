@@ -156,14 +156,12 @@ bool UZoneConnectivityFixer::Generate(UMapGrid2D* MapGrid,
 }
 
 bool UZoneConnectivityFixer::IsZoneConnected(const UMapGrid2D* MapGrid,
-                                             const TArray<int32>& ZoneLabels,
                                              int32 ZoneId) const
 {
     if (!MapGrid) return false;
     const FIntPoint Size = MapGrid->GetSize();
     const int32 W = Size.X, H = Size.Y;
     const int32 N = W*H;
-    if (ZoneLabels.Num() != N) return false;
 
     const TArray<FZonePassage>& Passages = MapGrid->GetPassages();
 
@@ -171,7 +169,7 @@ bool UZoneConnectivityFixer::IsZoneConnected(const UMapGrid2D* MapGrid,
     {
         if (x<0||y<0||x>=W||y>=H) return false;
         const int id = Idx(x,y,W);
-        if (ZoneLabels[id] != ZoneId) return false;
+        if (MapGrid->GetZoneAt(x, y) != ZoneId) return false;
         FGameplayTag T; int32 D=0; 
         if (!MapGrid->GetObjectAt(x,y,T,D)) return true; // no wall
         // If it's a passage cell, treat as open even if object existed (shouldn't normally)
