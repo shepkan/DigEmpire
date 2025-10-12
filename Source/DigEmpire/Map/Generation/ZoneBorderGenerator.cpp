@@ -519,6 +519,12 @@ bool UZoneBorderGenerator::BuildCarveStripePreview(
 		}
 	}
 
+	// Extend passage one cell into ZoneB: include the first empty B cells
+	for (const FIntPoint& e : TerminalEmptyB)
+	{
+		OutCellsB.Add(e);
+	}
+
 	// --- Leakage check around the mouths (terminal empties) on BOTH sides.
 	// If any adjacent EMPTY cell belongs to a third zone (not A/B), reject this anchor.
 	auto FailsLeakCheck = [&](const FIntPoint& Mouth)->bool
