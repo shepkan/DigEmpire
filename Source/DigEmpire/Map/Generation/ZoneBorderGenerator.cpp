@@ -222,18 +222,28 @@ void UZoneBorderGenerator::ChooseAndCarvePassages(
 			Passages.Add(MoveTemp(Pass));
 			DegreeNow[Key.X]++; DegreeNow[Key.Y]++;
 
-			// Ensure the last cell of the passage belongs to the destination zone (ZoneB)
-			if (Passages.Last().Cells.Num() > 0)
+			// Assign each passage cell to the adjacent majority zone (A or B) based on 4-neighbors
+			for (const FIntPoint& Cell : Passages.Last().Cells)
 			{
-				const FIntPoint LastCell = Passages.Last().Cells.Last();
-				const int32 lid = Idx(LastCell.X, LastCell.Y, CachedSize.X);
-				if (lid >= 0 && lid < CachedLabels.Num())
+				const int32 lid = Idx(Cell.X, Cell.Y, CachedSize.X);
+				if (lid < 0 || lid >= CachedLabels.Num()) continue;
+				int32 countA = 0, countB = 0;
+				const FIntPoint N4[4] = { FIntPoint(Cell.X+1,Cell.Y), FIntPoint(Cell.X-1,Cell.Y), FIntPoint(Cell.X,Cell.Y+1), FIntPoint(Cell.X,Cell.Y-1) };
+				for (const FIntPoint& n : N4)
 				{
-					CachedLabels[lid] = Key.Y;
+					if (!InBounds(n.X, n.Y)) continue;
+					const int32 nid = Idx(n.X, n.Y, CachedSize.X);
+					if (nid < 0 || nid >= CachedLabels.Num()) continue;
+					const int32 z = CachedLabels[nid];
+					if (z == Key.X) ++countA; else if (z == Key.Y) ++countB;
 				}
-
-				// Also update the map's per-cell zone id if available
-				Map->SetZoneAt(LastCell.X, LastCell.Y, Key.Y);
+				int32 target = CachedLabels[lid];
+				if (countA > countB) target = Key.X; else if (countB > countA) target = Key.Y; // tie: keep current
+				if (target != CachedLabels[lid])
+				{
+					CachedLabels[lid] = target;
+					Map->SetZoneAt(Cell.X, Cell.Y, target);
+				}
 			}
 
 			// Update protection mask: passage cells + dilation to protect from any walls & enforce spacing
