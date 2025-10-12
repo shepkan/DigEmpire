@@ -77,9 +77,15 @@ void UMapGrid2DComponent::InitializeAndBuild()
 
 	if (bOk)
 	{
+		// Persist zone labels into the map cells
+		MapInstance->ApplyZoneLabels(ZoneLabels);
 		UZoneBorderGenerator* BorderGen = NewObject<UZoneBorderGenerator>();
 
-		BorderGen->Generate(MapInstance, ZoneLabels, BorderSettings);		
+		if (BorderGen->Generate(MapInstance, ZoneLabels, BorderSettings))
+		{
+			// Store passages on the map for later queries
+			MapInstance->SetPassages(BorderGen->GetPassages());
+		}
 	}
 
 	// Notify via Event Bus.
