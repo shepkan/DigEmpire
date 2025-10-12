@@ -127,29 +127,38 @@ bool URoomGenerator::TryPlaceRoomInZone(UMapGrid2D* Map,
                 return !Map->GetObjectAt(ox, oy, T, D);
             };
 
-            // Try south, then north, west, east.
+            // Build a list of candidate entrance cells along the border where the outside cell is free.
+            TArray<FIntPoint> Candidates;
+            // Top edge (north)
+            for (int32 dx = 0; dx < RoomW; ++dx)
             {
-                const int32 cx = x0 + RoomW / 2;
-                const int32 southInY = y0 + RoomH - 1;
-                if (IsOutsideFree(cx, southInY + 1)) { entranceX = cx; entranceY = southInY; }
+                const int32 x = x0 + dx; const int32 y = y0;
+                if (IsOutsideFree(x, y - 1)) Candidates.Add(FIntPoint(x, y));
             }
-            if (entranceX < 0)
+            // Bottom edge (south)
+            for (int32 dx = 0; dx < RoomW; ++dx)
             {
-                const int32 cx = x0 + RoomW / 2;
-                const int32 northInY = y0;
-                if (IsOutsideFree(cx, northInY - 1)) { entranceX = cx; entranceY = northInY; }
+                const int32 x = x0 + dx; const int32 y = y0 + RoomH - 1;
+                if (IsOutsideFree(x, y + 1)) Candidates.Add(FIntPoint(x, y));
             }
-            if (entranceX < 0)
+            // Left edge (west)
+            for (int32 dy = 0; dy < RoomH; ++dy)
             {
-                const int32 cy = y0 + RoomH / 2;
-                const int32 westInX = x0;
-                if (IsOutsideFree(westInX - 1, cy)) { entranceX = westInX; entranceY = cy; }
+                const int32 x = x0; const int32 y = y0 + dy;
+                if (IsOutsideFree(x - 1, y)) Candidates.Add(FIntPoint(x, y));
             }
-            if (entranceX < 0)
+            // Right edge (east)
+            for (int32 dy = 0; dy < RoomH; ++dy)
             {
-                const int32 cy = y0 + RoomH / 2;
-                const int32 eastInX = x0 + RoomW - 1;
-                if (IsOutsideFree(eastInX + 1, cy)) { entranceX = eastInX; entranceY = cy; }
+                const int32 x = x0 + RoomW - 1; const int32 y = y0 + dy;
+                if (IsOutsideFree(x + 1, y)) Candidates.Add(FIntPoint(x, y));
+            }
+
+            if (Candidates.Num() > 0)
+            {
+                const int32 idx = RNG.RandRange(0, Candidates.Num() - 1);
+                entranceX = Candidates[idx].X;
+                entranceY = Candidates[idx].Y;
             }
 
             // If no valid entrance found, skip this placement.
