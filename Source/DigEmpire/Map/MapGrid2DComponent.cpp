@@ -90,9 +90,7 @@ void UMapGrid2DComponent::InitializeAndBuild()
 		{
 			// Store passages on the map for later queries
 			MapInstance->SetPassages(BorderGen->GetPassages());
-
-
-
+		}
 
 		// Optional: place rooms inside zones using RoomSettings
 		if (RoomSettings)
@@ -121,7 +119,8 @@ void UMapGrid2DComponent::InitializeAndBuild()
 	BroadcastMapReady();
 }
 
-void UMapGrid2DComponent::FillBackground()
+
+	void UMapGrid2DComponent::FillBackground()
 {
 	if (!IsMapReady()) return;
 
@@ -131,38 +130,6 @@ void UMapGrid2DComponent::FillBackground()
 		for (int32 X = 0; X < Size.X; ++X)
 		{
 			MapInstance->SetBackgroundAt(X, Y, DefaultBackgroundTag);
-		}
-	}
-}
-
-void UMapGrid2DComponent::BuildBorder()
-{
-	if (!IsMapReady()) return;
-	if (BorderThickness <= 0) return;
-	if (!BorderObjectTag.IsValid() || BorderObjectDurability <= 0) return;
-
-	const FIntPoint Size = MapInstance->GetSize();
-	const int32 MaxRings = FMath::Min3(BorderThickness, Size.X / 2, Size.Y / 2);
-
-	for (int32 Ring = 0; Ring < MaxRings; ++Ring)
-	{
-		const int32 MinX = Ring;
-		const int32 MaxX = Size.X - 1 - Ring;
-		const int32 MinY = Ring;
-		const int32 MaxY = Size.Y - 1 - Ring;
-
-		// Top & Bottom rows.
-		for (int32 X = MinX; X <= MaxX; ++X)
-		{
-			MapInstance->AddOrUpdateObjectAt(X, MinY, BorderObjectTag, BorderObjectDurability);
-			MapInstance->AddOrUpdateObjectAt(X, MaxY, BorderObjectTag, BorderObjectDurability);
-		}
-
-		// Left & Right columns (skip corners already set).
-		for (int32 Y = MinY + 1; Y <= MaxY - 1; ++Y)
-		{
-			MapInstance->AddOrUpdateObjectAt(MinX, Y, BorderObjectTag, BorderObjectDurability);
-			MapInstance->AddOrUpdateObjectAt(MaxX, Y, BorderObjectTag, BorderObjectDurability);
 		}
 	}
 }

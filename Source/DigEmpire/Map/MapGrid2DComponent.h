@@ -108,6 +108,5 @@ private:
 	TObjectPtr<UMapGrid2D> MapInstance = nullptr;
 
 	void FillBackground();
-	void BuildBorder();
 	void BroadcastMapReady();  // <-- Event Bus publisher
 };
