@@ -3,7 +3,6 @@
 #include "CoreMinimal.h"
 #include "UObject/Object.h"
 #include "RoomGenSettings.h"
-#include "Generation/ZoneBorderSettings.h"
 #include "RoomGenerator.generated.h"
 
 class UMapGrid2D;
@@ -32,6 +31,7 @@ private:
                             int32 RoomW,
                             int32 RoomH,
                             const TArray<int32>& Labels,
-                            const UZoneBorderSettings* BorderSettings);
+                            const UZoneBorderSettings* BorderSettings,
+                            int32 MaxAttempts,
+                            FRandomStream& RNG);
 };
-

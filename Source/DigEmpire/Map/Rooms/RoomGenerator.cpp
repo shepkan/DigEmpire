@@ -12,6 +12,10 @@ bool URoomGenerator::Generate(UMapGrid2D* MapGrid,
     if (W <= 0 || H <= 0) return false;
     if (ZoneLabels.Num() != W * H) return false;
 
+    FRandomStream RNG(Settings->RandomSeed);
+    if (Settings->RandomSeed < 0) { RNG.GenerateNewSeed(); }
+    const int32 MaxAttempts = Settings->MaxPlacementAttempts;
+
     bool bAnyPlaced = false;
     for (const FRoomSpec& Spec : Settings->Rooms)
     {
@@ -20,19 +24,22 @@ bool URoomGenerator::Generate(UMapGrid2D* MapGrid,
         // If auto-pick, choose the first zone that can fit this room.
         if (TargetZone < 0)
         {
-            // Naive search across zones 0..MaxLabel
-            int32 MaxLabel = 0;
-            for (int v : ZoneLabels) if (v > MaxLabel) MaxLabel = v;
+            // Build list of zones [0..MaxLabel] and shuffle
+            int32 MaxLabel = 0; for (int v : ZoneLabels) if (v > MaxLabel) MaxLabel = v;
+            TArray<int32> Zones; Zones.Reserve(MaxLabel + 1);
+            for (int32 z = 0; z <= MaxLabel; ++z) Zones.Add(z);
+            for (int32 i = Zones.Num() - 1; i > 0; --i) { const int32 j = RNG.RandRange(0, i); Zones.Swap(i, j); }
+
             bool bPlaced = false;
-            for (int32 z = 0; z <= MaxLabel && !bPlaced; ++z)
+            for (int32 z : Zones)
             {
-                bPlaced = TryPlaceRoomInZone(MapGrid, Size, z, Spec.Width, Spec.Height, ZoneLabels, BorderSettings);
-                if (bPlaced) { bAnyPlaced = true; }
+                bPlaced = TryPlaceRoomInZone(MapGrid, Size, z, Spec.Width, Spec.Height, ZoneLabels, BorderSettings, MaxAttempts, RNG);
+                if (bPlaced) { bAnyPlaced = true; break; }
             }
             continue; // move to next room spec
         }
 
-        if (TryPlaceRoomInZone(MapGrid, Size, TargetZone, Spec.Width, Spec.Height, ZoneLabels, BorderSettings))
+        if (TryPlaceRoomInZone(MapGrid, Size, TargetZone, Spec.Width, Spec.Height, ZoneLabels, BorderSettings, MaxAttempts, RNG))
         {
             bAnyPlaced = true;
         }
@@ -47,16 +54,14 @@ bool URoomGenerator::TryPlaceRoomInZone(UMapGrid2D* Map,
                                         int32 RoomW,
                                         int32 RoomH,
                                         const TArray<int32>& Labels,
-                                        const UZoneBorderSettings* BorderSettings)
+                                        const UZoneBorderSettings* BorderSettings,
+                                        int32 MaxAttempts,
+                                        FRandomStream& RNG)
 {
     const int32 W = Size.X, H = Size.Y;
     if (RoomW <= 0 || RoomH <= 0 || RoomW > W || RoomH > H) return false;
-
-    // Simple scan for a top-left that fits fully inside the given zone and has no blocking objects.
-    for (int32 y0 = 0; y0 <= H - RoomH; ++y0)
+    auto TryAt = [&](int32 x0, int32 y0)->bool
     {
-        for (int32 x0 = 0; x0 <= W - RoomW; ++x0)
-        {
             bool bFits = true;
             for (int32 dy = 0; dy < RoomH && bFits; ++dy)
             {
@@ -77,7 +82,7 @@ bool URoomGenerator::TryPlaceRoomInZone(UMapGrid2D* Map,
                     }
                 }
             }
-            if (!bFits) continue;
+            if (!bFits) return false;
 
             // Ensure a 1-cell free corridor around the room: all outside-neighboring cells must be in-bounds and empty.
             if (!(x0 > 0 && y0 > 0 && (x0 + RoomW) < W && (y0 + RoomH) < H))
@@ -191,8 +196,28 @@ bool URoomGenerator::TryPlaceRoomInZone(UMapGrid2D* Map,
 
             // Success placing this room
             return true;
-        }
-    }
+    };
 
-    return false;
+    if (MaxAttempts > 0)
+    {
+        for (int32 attempt = 0; attempt < MaxAttempts; ++attempt)
+        {
+            const int32 x0 = RNG.RandRange(0, W - RoomW);
+            const int32 y0 = RNG.RandRange(0, H - RoomH);
+            if (TryAt(x0, y0)) return true;
+        }
+        return false;
+    }
+    else
+    {
+        // Deterministic full scan
+        for (int32 y0 = 0; y0 <= H - RoomH; ++y0)
+        {
+            for (int32 x0 = 0; x0 <= W - RoomW; ++x0)
+            {
+                if (TryAt(x0, y0)) return true;
+            }
+        }
+        return false;
+    }
 }

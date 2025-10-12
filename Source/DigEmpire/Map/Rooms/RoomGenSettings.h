@@ -32,5 +32,12 @@ public:
     /** Rooms to place within zones. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Rooms")
     TArray<FRoomSpec> Rooms;
-};
 
+    /** Max random placement attempts per room (<=0 = deterministic full scan). */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Random", meta=(ClampMin="-1"))
+    int32 MaxPlacementAttempts = 512;
+
+    /** Random seed; if < 0 a random seed is used. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Random")
+    int32 RandomSeed = -1;
+};
