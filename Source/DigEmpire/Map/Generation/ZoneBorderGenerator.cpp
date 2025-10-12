@@ -1,4 +1,2644 @@
-﻿#include "ZoneBorderGenerator.h"
+#include "ZoneBorderGenerator.h"
+#include "DrawDebugHelpers.h"
+#include "Algo/RandomShuffle.h"
+#include "DigEmpire/Map/MapGrid2D.h"
+
+bool UZoneBorderGenerator::Generate(UMapGrid2D* MapGrid,
+                                    const TArray<int32>& ZoneLabels,
+                                    const UZoneBorderSettings* Settings)
+{
+	if (!ValidateInputs(MapGrid, ZoneLabels, Settings))
+		return false;
+
+	CachedLabels = ZoneLabels;
+	CachedSize = MapGrid->GetSize();
+	Passages.Reset();
+
+	// ZoneBorderGenerator.cpp (inside Generate)
+	TMap<FIntPoint, TSet<FIntPoint>> PairToA, PairToB;
+	CollectZoneBoundaries(CachedLabels, PairToA, PairToB);
+
+	// 1) Place walls first
+	PlaceWallsWithThickness(MapGrid, Settings, PairToA);
+
+	// 2) Then carve passages
+	ChooseAndCarvePassages(MapGrid, Settings, PairToA, PairToB);
+
+	return true;
+}
+
+TArray<FIntPoint> UZoneBorderGenerator::GetFreeCellsForZone(UMapGrid2D* MapGrid, int32 ZoneId) const
+{
+	TArray<FIntPoint> Out;
+	if (!MapGrid || CachedLabels.Num() != CachedSize.X * CachedSize.Y) return Out;
+	if (ZoneId < 0) return Out;
+
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+
+	for (int32 y = 0; y < H; ++y)
+	{
+		for (int32 x = 0; x < W; ++x)
+		{
+			const int32 id = Idx(x,y,W);
+			if (CachedLabels[id] != ZoneId) continue;
+
+			FGameplayTag Obj; int32 Durability = 0;
+			const bool bHasObj = MapGrid->GetObjectAt(x, y, Obj, Durability);
+			if (bHasObj && Obj.IsValid() && Durability > 0) continue;
+
+			Out.Add(FIntPoint(x,y));
+		}
+	}
+	return Out;
+}
+
+
+bool UZoneBorderGenerator::ValidateInputs(const UMapGrid2D* Map,
+                                          const TArray<int32>& Labels,
+                                          const UZoneBorderSettings* Settings) const
+{
+	if (!Map || !Settings) return false;
+	const FIntPoint S = Map->GetSize();
+	if (S.X <= 0 || S.Y <= 0) return false;
+	if (Labels.Num() != S.X * S.Y) return false;
+	if (!Settings->WallObjectTag.IsValid() || Settings->WallDurability <= 0) return false;
+	if (Settings->BorderThickness < 1 || Settings->PassageWidth < 1) return false;
+	return true;
+}
+
+void UZoneBorderGenerator::CollectZoneBoundaries(const TArray<int32>& Labels,
+                                                 TMap<FIntPoint, TSet<FIntPoint>>& OutPairToA,
+                                                 TMap<FIntPoint, TSet<FIntPoint>>& OutPairToB) const
+{
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+
+	auto PairKey = [](int32 A, int32 B)->FIntPoint
+	{
+		return (A < B) ? FIntPoint(A,B) : FIntPoint(B,A);
+	};
+
+	for (int32 y = 0; y < H; ++y)
+	{
+		for (int32 x = 0; x < W; ++x)
+		{
+			const int32 z = Labels[Idx(x,y,W)];
+			if (z < 0) continue;
+
+			// Right neighbor
+			if (x < W - 1)
+			{
+				const int32 z2 = Labels[Idx(x+1,y,W)];
+				if (z2 >= 0 && z2 != z)
+				{
+					const FIntPoint Key = PairKey(z, z2);
+					// Put the left cell into the lower-id side set
+					if (Key.X == z)  { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x,   y)); }
+					else             { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x+1, y)); }
+					// And mirror to B side
+					if (Key.Y == z)  { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x,   y)); }
+					else             { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x+1, y)); }
+				}
+			}
+			// Up neighbor
+			if (y < H - 1)
+			{
+				const int32 z2 = Labels[Idx(x,y+1,W)];
+				if (z2 >= 0 && z2 != z)
+				{
+					const FIntPoint Key = PairKey(z, z2);
+					if (Key.X == z)  { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x, y  )); }
+					else             { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x, y+1)); }
+					if (Key.Y == z)  { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x, y  )); }
+					else             { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x, y+1)); }
+				}
+			}
+		}
+	}
+}
+
+void UZoneBorderGenerator::ChooseAndCarvePassages(
+	UMapGrid2D* Map,
+	const UZoneBorderSettings* Settings,
+	const TMap<FIntPoint, TSet<FIntPoint>>& PairToA,
+	const TMap<FIntPoint, TSet<FIntPoint>>& PairToB)
+{
+	const int32 Seed = (Settings->RandomSeed >= 0) ? Settings->RandomSeed : FMath::Rand();
+	FRandomStream RNG(Seed);
+
+	PassageMask.Reset();
+	Passages.Reset();
+
+	// Degree caps
+	TMap<int32,int32> DegreeCap, DegreeNow;
+	TSet<int32> ZonesInvolved;
+	for (const auto& kv : PairToA) { ZonesInvolved.Add(kv.Key.X); ZonesInvolved.Add(kv.Key.Y); }
+	for (int32 z : ZonesInvolved) { DegreeNow.Add(z, 0); DegreeCap.Add(z, -1); }
+	for (const FZonePassageCap& cap : Settings->DegreeCaps)
+	{
+		DegreeCap.FindOrAdd(cap.ZoneIndex) = cap.MaxPassages;
+		if (!DegreeNow.Contains(cap.ZoneIndex)) DegreeNow.Add(cap.ZoneIndex, 0);
+	}
+	auto ZoneBelowCap = [&](int32 Z)->bool{
+		const int32 cap = DegreeCap.Contains(Z) ? DegreeCap[Z] : -1;
+		const int32 deg = DegreeNow.Contains(Z) ? DegreeNow[Z] : 0;
+		return (cap < 0) || (deg < cap);
+	};
+
+	// Randomize pair order
+	TArray<FIntPoint> Pairs; Pairs.Reserve(PairToA.Num());
+	for (const auto& kv : PairToA) Pairs.Add(kv.Key);
+	Algo::RandomShuffle(Pairs);
+
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+	auto InBounds2 = [&](int x,int y){ return x>=0 && y>=0 && x<W && y<H; };
+
+	for (const FIntPoint& Key : Pairs) // (ZoneA=min, ZoneB=max)
+	{
+		const TSet<FIntPoint>* ASetPtr = PairToA.Find(Key);
+		const TSet<FIntPoint>* BSetPtr = PairToB.Find(Key);
+		if (!ASetPtr || !BSetPtr || ASetPtr->Num()==0 || BSetPtr->Num()==0) continue;
+		if (!ZoneBelowCap(Key.X) || !ZoneBelowCap(Key.Y)) continue;
+
+		// Candidate anchors on A side
+		TArray<FIntPoint> ACands;
+		ACands.Reserve(ASetPtr->Num());
+		for (const FIntPoint& c : *ASetPtr) ACands.Add(c);
+		Algo::RandomShuffle(ACands);
+
+		bool bCarved = false;
+		int32 attemptsLeft = FMath::Max(1, Settings->AttemptsPerPair);
+
+		// Try up to AttemptsPerPair different anchors
+		for (int32 attempt = 0; attempt < attemptsLeft && !bCarved; ++attempt)
+		{
+			if (ACands.Num() == 0) break;
+			const int32 pick = RNG.RandRange(0, ACands.Num()-1);
+			const FIntPoint AnchorA = ACands[pick];
+			ACands.RemoveAtSwap(pick);
+
+			// Determine boundary orientation by checking B neighbors around the anchor
+			bool bVertical=false; int dxToB=0, dyToB=0;
+			if (BSetPtr->Contains(FIntPoint(AnchorA.X+1,AnchorA.Y))) { dxToB=+1; dyToB=0; bVertical=true; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X-1,AnchorA.Y))) { dxToB=-1; dyToB=0; bVertical=true; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X,AnchorA.Y+1))) { dxToB=0; dyToB=+1; bVertical=false; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X,AnchorA.Y-1))) { dxToB=0; dyToB=-1; bVertical=false; }
+			else
+			{
+				// Fallback: pick any B cell and infer direction
+				const TSet<FIntPoint>& BSet = *BSetPtr;
+				int32 j=0, idx = RNG.RandRange(0, BSet.Num()-1);
+				FIntPoint anyB = AnchorA;
+				for (const FIntPoint& b : BSet) { if (j++==idx){ anyB=b; break; } }
+				dxToB = FMath::Clamp(anyB.X-AnchorA.X,-1,1);
+				dyToB = FMath::Clamp(anyB.Y-AnchorA.Y,-1,1);
+				bVertical = (dxToB!=0);
+			}
+
+			// Preview stripe to carve (no map modification yet)
+			TArray<FIntPoint> ToClearA, ToClearB;
+			if (!BuildCarveStripePreview(Map, AnchorA, bVertical, dxToB, dyToB,
+				Settings->PassageWidth, Key.X, Key.Y, ToClearA, ToClearB))
+			{
+				continue; // invalid anchor: would exit bounds or hit wrong zones
+			}
+
+			// Spacing check (global)
+			TArray<FIntPoint> Preview;
+			Preview.Reserve(ToClearA.Num() + ToClearB.Num());
+			Preview.Append(ToClearA); Preview.Append(ToClearB);
+			if (IsTooCloseToExistingPassages(Preview, Settings->MinPassageDistance))
+			{
+				continue; // too close to existing passages
+			}
+
+			// Carve for real
+			for (const FIntPoint& p : ToClearA) ClearCell(Map, p.X, p.Y);
+			for (const FIntPoint& p : ToClearB) ClearCell(Map, p.X, p.Y);
+
+			// Record passage
+			FZonePassage Pass; 
+			Pass.ZoneA = Key.X; Pass.ZoneB = Key.Y;
+			Pass.Cells = MoveTemp(Preview);
+			Passages.Add(MoveTemp(Pass));
+			DegreeNow[Key.X]++; DegreeNow[Key.Y]++;
+
+\t\t\t// (no zone reassignment for passage cells)
+#include "ZoneBorderGenerator.h"
+#include "DrawDebugHelpers.h"
+#include "Algo/RandomShuffle.h"
+#include "DigEmpire/Map/MapGrid2D.h"
+
+bool UZoneBorderGenerator::Generate(UMapGrid2D* MapGrid,
+                                    const TArray<int32>& ZoneLabels,
+                                    const UZoneBorderSettings* Settings)
+{
+	if (!ValidateInputs(MapGrid, ZoneLabels, Settings))
+		return false;
+
+	CachedLabels = ZoneLabels;
+	CachedSize = MapGrid->GetSize();
+	Passages.Reset();
+
+	// ZoneBorderGenerator.cpp (inside Generate)
+	TMap<FIntPoint, TSet<FIntPoint>> PairToA, PairToB;
+	CollectZoneBoundaries(CachedLabels, PairToA, PairToB);
+
+	// 1) Place walls first
+	PlaceWallsWithThickness(MapGrid, Settings, PairToA);
+
+	// 2) Then carve passages
+	ChooseAndCarvePassages(MapGrid, Settings, PairToA, PairToB);
+
+	return true;
+}
+\t\t\t// Debug
+\t\t\tif (Settings->bDebugDrawPassages)
+\t\t\t{
+\t\t\t\tDebugDrawPassageCells(Settings, Passages.Last().Cells, FColor::MakeRandomColor(), Map->GetWorld());
+\t\t\t}
+#include "ZoneBorderGenerator.h"
+#include "DrawDebugHelpers.h"
+#include "Algo/RandomShuffle.h"
+#include "DigEmpire/Map/MapGrid2D.h"
+
+bool UZoneBorderGenerator::Generate(UMapGrid2D* MapGrid,
+                                    const TArray<int32>& ZoneLabels,
+                                    const UZoneBorderSettings* Settings)
+{
+	if (!ValidateInputs(MapGrid, ZoneLabels, Settings))
+		return false;
+
+	CachedLabels = ZoneLabels;
+	CachedSize = MapGrid->GetSize();
+	Passages.Reset();
+
+	// ZoneBorderGenerator.cpp (inside Generate)
+	TMap<FIntPoint, TSet<FIntPoint>> PairToA, PairToB;
+	CollectZoneBoundaries(CachedLabels, PairToA, PairToB);
+
+	// 1) Place walls first
+	PlaceWallsWithThickness(MapGrid, Settings, PairToA);
+
+	// 2) Then carve passages
+	ChooseAndCarvePassages(MapGrid, Settings, PairToA, PairToB);
+
+	return true;
+}
+
+TArray<FIntPoint> UZoneBorderGenerator::GetFreeCellsForZone(UMapGrid2D* MapGrid, int32 ZoneId) const
+{
+	TArray<FIntPoint> Out;
+	if (!MapGrid || CachedLabels.Num() != CachedSize.X * CachedSize.Y) return Out;
+	if (ZoneId < 0) return Out;
+
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+
+	for (int32 y = 0; y < H; ++y)
+	{
+		for (int32 x = 0; x < W; ++x)
+		{
+			const int32 id = Idx(x,y,W);
+			if (CachedLabels[id] != ZoneId) continue;
+
+			FGameplayTag Obj; int32 Durability = 0;
+			const bool bHasObj = MapGrid->GetObjectAt(x, y, Obj, Durability);
+			if (bHasObj && Obj.IsValid() && Durability > 0) continue;
+
+			Out.Add(FIntPoint(x,y));
+		}
+	}
+	return Out;
+}
+
+
+bool UZoneBorderGenerator::ValidateInputs(const UMapGrid2D* Map,
+                                          const TArray<int32>& Labels,
+                                          const UZoneBorderSettings* Settings) const
+{
+	if (!Map || !Settings) return false;
+	const FIntPoint S = Map->GetSize();
+	if (S.X <= 0 || S.Y <= 0) return false;
+	if (Labels.Num() != S.X * S.Y) return false;
+	if (!Settings->WallObjectTag.IsValid() || Settings->WallDurability <= 0) return false;
+	if (Settings->BorderThickness < 1 || Settings->PassageWidth < 1) return false;
+	return true;
+}
+
+void UZoneBorderGenerator::CollectZoneBoundaries(const TArray<int32>& Labels,
+                                                 TMap<FIntPoint, TSet<FIntPoint>>& OutPairToA,
+                                                 TMap<FIntPoint, TSet<FIntPoint>>& OutPairToB) const
+{
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+
+	auto PairKey = [](int32 A, int32 B)->FIntPoint
+	{
+		return (A < B) ? FIntPoint(A,B) : FIntPoint(B,A);
+	};
+
+	for (int32 y = 0; y < H; ++y)
+	{
+		for (int32 x = 0; x < W; ++x)
+		{
+			const int32 z = Labels[Idx(x,y,W)];
+			if (z < 0) continue;
+
+			// Right neighbor
+			if (x < W - 1)
+			{
+				const int32 z2 = Labels[Idx(x+1,y,W)];
+				if (z2 >= 0 && z2 != z)
+				{
+					const FIntPoint Key = PairKey(z, z2);
+					// Put the left cell into the lower-id side set
+					if (Key.X == z)  { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x,   y)); }
+					else             { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x+1, y)); }
+					// And mirror to B side
+					if (Key.Y == z)  { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x,   y)); }
+					else             { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x+1, y)); }
+				}
+			}
+			// Up neighbor
+			if (y < H - 1)
+			{
+				const int32 z2 = Labels[Idx(x,y+1,W)];
+				if (z2 >= 0 && z2 != z)
+				{
+					const FIntPoint Key = PairKey(z, z2);
+					if (Key.X == z)  { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x, y  )); }
+					else             { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x, y+1)); }
+					if (Key.Y == z)  { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x, y  )); }
+					else             { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x, y+1)); }
+				}
+			}
+		}
+	}
+}
+
+void UZoneBorderGenerator::ChooseAndCarvePassages(
+	UMapGrid2D* Map,
+	const UZoneBorderSettings* Settings,
+	const TMap<FIntPoint, TSet<FIntPoint>>& PairToA,
+	const TMap<FIntPoint, TSet<FIntPoint>>& PairToB)
+{
+	const int32 Seed = (Settings->RandomSeed >= 0) ? Settings->RandomSeed : FMath::Rand();
+	FRandomStream RNG(Seed);
+
+	PassageMask.Reset();
+	Passages.Reset();
+
+	// Degree caps
+	TMap<int32,int32> DegreeCap, DegreeNow;
+	TSet<int32> ZonesInvolved;
+	for (const auto& kv : PairToA) { ZonesInvolved.Add(kv.Key.X); ZonesInvolved.Add(kv.Key.Y); }
+	for (int32 z : ZonesInvolved) { DegreeNow.Add(z, 0); DegreeCap.Add(z, -1); }
+	for (const FZonePassageCap& cap : Settings->DegreeCaps)
+	{
+		DegreeCap.FindOrAdd(cap.ZoneIndex) = cap.MaxPassages;
+		if (!DegreeNow.Contains(cap.ZoneIndex)) DegreeNow.Add(cap.ZoneIndex, 0);
+	}
+	auto ZoneBelowCap = [&](int32 Z)->bool{
+		const int32 cap = DegreeCap.Contains(Z) ? DegreeCap[Z] : -1;
+		const int32 deg = DegreeNow.Contains(Z) ? DegreeNow[Z] : 0;
+		return (cap < 0) || (deg < cap);
+	};
+
+	// Randomize pair order
+	TArray<FIntPoint> Pairs; Pairs.Reserve(PairToA.Num());
+	for (const auto& kv : PairToA) Pairs.Add(kv.Key);
+	Algo::RandomShuffle(Pairs);
+
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+	auto InBounds2 = [&](int x,int y){ return x>=0 && y>=0 && x<W && y<H; };
+
+	for (const FIntPoint& Key : Pairs) // (ZoneA=min, ZoneB=max)
+	{
+		const TSet<FIntPoint>* ASetPtr = PairToA.Find(Key);
+		const TSet<FIntPoint>* BSetPtr = PairToB.Find(Key);
+		if (!ASetPtr || !BSetPtr || ASetPtr->Num()==0 || BSetPtr->Num()==0) continue;
+		if (!ZoneBelowCap(Key.X) || !ZoneBelowCap(Key.Y)) continue;
+
+		// Candidate anchors on A side
+		TArray<FIntPoint> ACands;
+		ACands.Reserve(ASetPtr->Num());
+		for (const FIntPoint& c : *ASetPtr) ACands.Add(c);
+		Algo::RandomShuffle(ACands);
+
+		bool bCarved = false;
+		int32 attemptsLeft = FMath::Max(1, Settings->AttemptsPerPair);
+
+		// Try up to AttemptsPerPair different anchors
+		for (int32 attempt = 0; attempt < attemptsLeft && !bCarved; ++attempt)
+		{
+			if (ACands.Num() == 0) break;
+			const int32 pick = RNG.RandRange(0, ACands.Num()-1);
+			const FIntPoint AnchorA = ACands[pick];
+			ACands.RemoveAtSwap(pick);
+
+			// Determine boundary orientation by checking B neighbors around the anchor
+			bool bVertical=false; int dxToB=0, dyToB=0;
+			if (BSetPtr->Contains(FIntPoint(AnchorA.X+1,AnchorA.Y))) { dxToB=+1; dyToB=0; bVertical=true; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X-1,AnchorA.Y))) { dxToB=-1; dyToB=0; bVertical=true; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X,AnchorA.Y+1))) { dxToB=0; dyToB=+1; bVertical=false; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X,AnchorA.Y-1))) { dxToB=0; dyToB=-1; bVertical=false; }
+			else
+			{
+				// Fallback: pick any B cell and infer direction
+				const TSet<FIntPoint>& BSet = *BSetPtr;
+				int32 j=0, idx = RNG.RandRange(0, BSet.Num()-1);
+				FIntPoint anyB = AnchorA;
+				for (const FIntPoint& b : BSet) { if (j++==idx){ anyB=b; break; } }
+				dxToB = FMath::Clamp(anyB.X-AnchorA.X,-1,1);
+				dyToB = FMath::Clamp(anyB.Y-AnchorA.Y,-1,1);
+				bVertical = (dxToB!=0);
+			}
+
+			// Preview stripe to carve (no map modification yet)
+			TArray<FIntPoint> ToClearA, ToClearB;
+			if (!BuildCarveStripePreview(Map, AnchorA, bVertical, dxToB, dyToB,
+				Settings->PassageWidth, Key.X, Key.Y, ToClearA, ToClearB))
+			{
+				continue; // invalid anchor: would exit bounds or hit wrong zones
+			}
+
+			// Spacing check (global)
+			TArray<FIntPoint> Preview;
+			Preview.Reserve(ToClearA.Num() + ToClearB.Num());
+			Preview.Append(ToClearA); Preview.Append(ToClearB);
+			if (IsTooCloseToExistingPassages(Preview, Settings->MinPassageDistance))
+			{
+				continue; // too close to existing passages
+			}
+
+			// Carve for real
+			for (const FIntPoint& p : ToClearA) ClearCell(Map, p.X, p.Y);
+			for (const FIntPoint& p : ToClearB) ClearCell(Map, p.X, p.Y);
+
+			// Record passage
+			FZonePassage Pass; 
+			Pass.ZoneA = Key.X; Pass.ZoneB = Key.Y;
+			Pass.Cells = MoveTemp(Preview);
+			Passages.Add(MoveTemp(Pass));
+			DegreeNow[Key.X]++; DegreeNow[Key.Y]++;
+
+\t\t\t// (no zone reassignment for passage cells)
+#include "ZoneBorderGenerator.h"
+#include "DrawDebugHelpers.h"
+#include "Algo/RandomShuffle.h"
+#include "DigEmpire/Map/MapGrid2D.h"
+
+bool UZoneBorderGenerator::Generate(UMapGrid2D* MapGrid,
+                                    const TArray<int32>& ZoneLabels,
+                                    const UZoneBorderSettings* Settings)
+{
+	if (!ValidateInputs(MapGrid, ZoneLabels, Settings))
+		return false;
+
+	CachedLabels = ZoneLabels;
+	CachedSize = MapGrid->GetSize();
+	Passages.Reset();
+
+	// ZoneBorderGenerator.cpp (inside Generate)
+	TMap<FIntPoint, TSet<FIntPoint>> PairToA, PairToB;
+	CollectZoneBoundaries(CachedLabels, PairToA, PairToB);
+
+	// 1) Place walls first
+	PlaceWallsWithThickness(MapGrid, Settings, PairToA);
+
+	// 2) Then carve passages
+	ChooseAndCarvePassages(MapGrid, Settings, PairToA, PairToB);
+
+	return true;
+}
+
+TArray<FIntPoint> UZoneBorderGenerator::GetFreeCellsForZone(UMapGrid2D* MapGrid, int32 ZoneId) const
+{
+	TArray<FIntPoint> Out;
+	if (!MapGrid || CachedLabels.Num() != CachedSize.X * CachedSize.Y) return Out;
+	if (ZoneId < 0) return Out;
+
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+
+	for (int32 y = 0; y < H; ++y)
+	{
+		for (int32 x = 0; x < W; ++x)
+		{
+			const int32 id = Idx(x,y,W);
+			if (CachedLabels[id] != ZoneId) continue;
+
+			FGameplayTag Obj; int32 Durability = 0;
+			const bool bHasObj = MapGrid->GetObjectAt(x, y, Obj, Durability);
+			if (bHasObj && Obj.IsValid() && Durability > 0) continue;
+
+			Out.Add(FIntPoint(x,y));
+		}
+	}
+	return Out;
+}
+
+
+bool UZoneBorderGenerator::ValidateInputs(const UMapGrid2D* Map,
+                                          const TArray<int32>& Labels,
+                                          const UZoneBorderSettings* Settings) const
+{
+	if (!Map || !Settings) return false;
+	const FIntPoint S = Map->GetSize();
+	if (S.X <= 0 || S.Y <= 0) return false;
+	if (Labels.Num() != S.X * S.Y) return false;
+	if (!Settings->WallObjectTag.IsValid() || Settings->WallDurability <= 0) return false;
+	if (Settings->BorderThickness < 1 || Settings->PassageWidth < 1) return false;
+	return true;
+}
+
+void UZoneBorderGenerator::CollectZoneBoundaries(const TArray<int32>& Labels,
+                                                 TMap<FIntPoint, TSet<FIntPoint>>& OutPairToA,
+                                                 TMap<FIntPoint, TSet<FIntPoint>>& OutPairToB) const
+{
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+
+	auto PairKey = [](int32 A, int32 B)->FIntPoint
+	{
+		return (A < B) ? FIntPoint(A,B) : FIntPoint(B,A);
+	};
+
+	for (int32 y = 0; y < H; ++y)
+	{
+		for (int32 x = 0; x < W; ++x)
+		{
+			const int32 z = Labels[Idx(x,y,W)];
+			if (z < 0) continue;
+
+			// Right neighbor
+			if (x < W - 1)
+			{
+				const int32 z2 = Labels[Idx(x+1,y,W)];
+				if (z2 >= 0 && z2 != z)
+				{
+					const FIntPoint Key = PairKey(z, z2);
+					// Put the left cell into the lower-id side set
+					if (Key.X == z)  { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x,   y)); }
+					else             { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x+1, y)); }
+					// And mirror to B side
+					if (Key.Y == z)  { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x,   y)); }
+					else             { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x+1, y)); }
+				}
+			}
+			// Up neighbor
+			if (y < H - 1)
+			{
+				const int32 z2 = Labels[Idx(x,y+1,W)];
+				if (z2 >= 0 && z2 != z)
+				{
+					const FIntPoint Key = PairKey(z, z2);
+					if (Key.X == z)  { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x, y  )); }
+					else             { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x, y+1)); }
+					if (Key.Y == z)  { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x, y  )); }
+					else             { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x, y+1)); }
+				}
+			}
+		}
+	}
+}
+
+void UZoneBorderGenerator::ChooseAndCarvePassages(
+	UMapGrid2D* Map,
+	const UZoneBorderSettings* Settings,
+	const TMap<FIntPoint, TSet<FIntPoint>>& PairToA,
+	const TMap<FIntPoint, TSet<FIntPoint>>& PairToB)
+{
+	const int32 Seed = (Settings->RandomSeed >= 0) ? Settings->RandomSeed : FMath::Rand();
+	FRandomStream RNG(Seed);
+
+	PassageMask.Reset();
+	Passages.Reset();
+
+	// Degree caps
+	TMap<int32,int32> DegreeCap, DegreeNow;
+	TSet<int32> ZonesInvolved;
+	for (const auto& kv : PairToA) { ZonesInvolved.Add(kv.Key.X); ZonesInvolved.Add(kv.Key.Y); }
+	for (int32 z : ZonesInvolved) { DegreeNow.Add(z, 0); DegreeCap.Add(z, -1); }
+	for (const FZonePassageCap& cap : Settings->DegreeCaps)
+	{
+		DegreeCap.FindOrAdd(cap.ZoneIndex) = cap.MaxPassages;
+		if (!DegreeNow.Contains(cap.ZoneIndex)) DegreeNow.Add(cap.ZoneIndex, 0);
+	}
+	auto ZoneBelowCap = [&](int32 Z)->bool{
+		const int32 cap = DegreeCap.Contains(Z) ? DegreeCap[Z] : -1;
+		const int32 deg = DegreeNow.Contains(Z) ? DegreeNow[Z] : 0;
+		return (cap < 0) || (deg < cap);
+	};
+
+	// Randomize pair order
+	TArray<FIntPoint> Pairs; Pairs.Reserve(PairToA.Num());
+	for (const auto& kv : PairToA) Pairs.Add(kv.Key);
+	Algo::RandomShuffle(Pairs);
+
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+	auto InBounds2 = [&](int x,int y){ return x>=0 && y>=0 && x<W && y<H; };
+
+	for (const FIntPoint& Key : Pairs) // (ZoneA=min, ZoneB=max)
+	{
+		const TSet<FIntPoint>* ASetPtr = PairToA.Find(Key);
+		const TSet<FIntPoint>* BSetPtr = PairToB.Find(Key);
+		if (!ASetPtr || !BSetPtr || ASetPtr->Num()==0 || BSetPtr->Num()==0) continue;
+		if (!ZoneBelowCap(Key.X) || !ZoneBelowCap(Key.Y)) continue;
+
+		// Candidate anchors on A side
+		TArray<FIntPoint> ACands;
+		ACands.Reserve(ASetPtr->Num());
+		for (const FIntPoint& c : *ASetPtr) ACands.Add(c);
+		Algo::RandomShuffle(ACands);
+
+		bool bCarved = false;
+		int32 attemptsLeft = FMath::Max(1, Settings->AttemptsPerPair);
+
+		// Try up to AttemptsPerPair different anchors
+		for (int32 attempt = 0; attempt < attemptsLeft && !bCarved; ++attempt)
+		{
+			if (ACands.Num() == 0) break;
+			const int32 pick = RNG.RandRange(0, ACands.Num()-1);
+			const FIntPoint AnchorA = ACands[pick];
+			ACands.RemoveAtSwap(pick);
+
+			// Determine boundary orientation by checking B neighbors around the anchor
+			bool bVertical=false; int dxToB=0, dyToB=0;
+			if (BSetPtr->Contains(FIntPoint(AnchorA.X+1,AnchorA.Y))) { dxToB=+1; dyToB=0; bVertical=true; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X-1,AnchorA.Y))) { dxToB=-1; dyToB=0; bVertical=true; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X,AnchorA.Y+1))) { dxToB=0; dyToB=+1; bVertical=false; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X,AnchorA.Y-1))) { dxToB=0; dyToB=-1; bVertical=false; }
+			else
+			{
+				// Fallback: pick any B cell and infer direction
+				const TSet<FIntPoint>& BSet = *BSetPtr;
+				int32 j=0, idx = RNG.RandRange(0, BSet.Num()-1);
+				FIntPoint anyB = AnchorA;
+				for (const FIntPoint& b : BSet) { if (j++==idx){ anyB=b; break; } }
+				dxToB = FMath::Clamp(anyB.X-AnchorA.X,-1,1);
+				dyToB = FMath::Clamp(anyB.Y-AnchorA.Y,-1,1);
+				bVertical = (dxToB!=0);
+			}
+
+			// Preview stripe to carve (no map modification yet)
+			TArray<FIntPoint> ToClearA, ToClearB;
+			if (!BuildCarveStripePreview(Map, AnchorA, bVertical, dxToB, dyToB,
+				Settings->PassageWidth, Key.X, Key.Y, ToClearA, ToClearB))
+			{
+				continue; // invalid anchor: would exit bounds or hit wrong zones
+			}
+
+			// Spacing check (global)
+			TArray<FIntPoint> Preview;
+			Preview.Reserve(ToClearA.Num() + ToClearB.Num());
+			Preview.Append(ToClearA); Preview.Append(ToClearB);
+			if (IsTooCloseToExistingPassages(Preview, Settings->MinPassageDistance))
+			{
+				continue; // too close to existing passages
+			}
+
+			// Carve for real
+			for (const FIntPoint& p : ToClearA) ClearCell(Map, p.X, p.Y);
+			for (const FIntPoint& p : ToClearB) ClearCell(Map, p.X, p.Y);
+
+			// Record passage
+			FZonePassage Pass; 
+			Pass.ZoneA = Key.X; Pass.ZoneB = Key.Y;
+			Pass.Cells = MoveTemp(Preview);
+			Passages.Add(MoveTemp(Pass));
+			DegreeNow[Key.X]++; DegreeNow[Key.Y]++;
+
+			// (no zone reassignment for passage cells)
+#include "ZoneBorderGenerator.h"
+#include "DrawDebugHelpers.h"
+#include "Algo/RandomShuffle.h"
+#include "DigEmpire/Map/MapGrid2D.h"
+
+bool UZoneBorderGenerator::Generate(UMapGrid2D* MapGrid,
+                                    const TArray<int32>& ZoneLabels,
+                                    const UZoneBorderSettings* Settings)
+{
+	if (!ValidateInputs(MapGrid, ZoneLabels, Settings))
+		return false;
+
+	CachedLabels = ZoneLabels;
+	CachedSize = MapGrid->GetSize();
+	Passages.Reset();
+
+	// ZoneBorderGenerator.cpp (inside Generate)
+	TMap<FIntPoint, TSet<FIntPoint>> PairToA, PairToB;
+	CollectZoneBoundaries(CachedLabels, PairToA, PairToB);
+
+	// 1) Place walls first
+	PlaceWallsWithThickness(MapGrid, Settings, PairToA);
+
+	// 2) Then carve passages
+	ChooseAndCarvePassages(MapGrid, Settings, PairToA, PairToB);
+
+	return true;
+}
+
+TArray<FIntPoint> UZoneBorderGenerator::GetFreeCellsForZone(UMapGrid2D* MapGrid, int32 ZoneId) const
+{
+	TArray<FIntPoint> Out;
+	if (!MapGrid || CachedLabels.Num() != CachedSize.X * CachedSize.Y) return Out;
+	if (ZoneId < 0) return Out;
+
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+
+	for (int32 y = 0; y < H; ++y)
+	{
+		for (int32 x = 0; x < W; ++x)
+		{
+			const int32 id = Idx(x,y,W);
+			if (CachedLabels[id] != ZoneId) continue;
+
+			FGameplayTag Obj; int32 Durability = 0;
+			const bool bHasObj = MapGrid->GetObjectAt(x, y, Obj, Durability);
+			if (bHasObj && Obj.IsValid() && Durability > 0) continue;
+
+			Out.Add(FIntPoint(x,y));
+		}
+	}
+	return Out;
+}
+
+
+bool UZoneBorderGenerator::ValidateInputs(const UMapGrid2D* Map,
+                                          const TArray<int32>& Labels,
+                                          const UZoneBorderSettings* Settings) const
+{
+	if (!Map || !Settings) return false;
+	const FIntPoint S = Map->GetSize();
+	if (S.X <= 0 || S.Y <= 0) return false;
+	if (Labels.Num() != S.X * S.Y) return false;
+	if (!Settings->WallObjectTag.IsValid() || Settings->WallDurability <= 0) return false;
+	if (Settings->BorderThickness < 1 || Settings->PassageWidth < 1) return false;
+	return true;
+}
+
+void UZoneBorderGenerator::CollectZoneBoundaries(const TArray<int32>& Labels,
+                                                 TMap<FIntPoint, TSet<FIntPoint>>& OutPairToA,
+                                                 TMap<FIntPoint, TSet<FIntPoint>>& OutPairToB) const
+{
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+
+	auto PairKey = [](int32 A, int32 B)->FIntPoint
+	{
+		return (A < B) ? FIntPoint(A,B) : FIntPoint(B,A);
+	};
+
+	for (int32 y = 0; y < H; ++y)
+	{
+		for (int32 x = 0; x < W; ++x)
+		{
+			const int32 z = Labels[Idx(x,y,W)];
+			if (z < 0) continue;
+
+			// Right neighbor
+			if (x < W - 1)
+			{
+				const int32 z2 = Labels[Idx(x+1,y,W)];
+				if (z2 >= 0 && z2 != z)
+				{
+					const FIntPoint Key = PairKey(z, z2);
+					// Put the left cell into the lower-id side set
+					if (Key.X == z)  { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x,   y)); }
+					else             { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x+1, y)); }
+					// And mirror to B side
+					if (Key.Y == z)  { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x,   y)); }
+					else             { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x+1, y)); }
+				}
+			}
+			// Up neighbor
+			if (y < H - 1)
+			{
+				const int32 z2 = Labels[Idx(x,y+1,W)];
+				if (z2 >= 0 && z2 != z)
+				{
+					const FIntPoint Key = PairKey(z, z2);
+					if (Key.X == z)  { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x, y  )); }
+					else             { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x, y+1)); }
+					if (Key.Y == z)  { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x, y  )); }
+					else             { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x, y+1)); }
+				}
+			}
+		}
+	}
+}
+
+void UZoneBorderGenerator::ChooseAndCarvePassages(
+	UMapGrid2D* Map,
+	const UZoneBorderSettings* Settings,
+	const TMap<FIntPoint, TSet<FIntPoint>>& PairToA,
+	const TMap<FIntPoint, TSet<FIntPoint>>& PairToB)
+{
+	const int32 Seed = (Settings->RandomSeed >= 0) ? Settings->RandomSeed : FMath::Rand();
+	FRandomStream RNG(Seed);
+
+	PassageMask.Reset();
+	Passages.Reset();
+
+	// Degree caps
+	TMap<int32,int32> DegreeCap, DegreeNow;
+	TSet<int32> ZonesInvolved;
+	for (const auto& kv : PairToA) { ZonesInvolved.Add(kv.Key.X); ZonesInvolved.Add(kv.Key.Y); }
+	for (int32 z : ZonesInvolved) { DegreeNow.Add(z, 0); DegreeCap.Add(z, -1); }
+	for (const FZonePassageCap& cap : Settings->DegreeCaps)
+	{
+		DegreeCap.FindOrAdd(cap.ZoneIndex) = cap.MaxPassages;
+		if (!DegreeNow.Contains(cap.ZoneIndex)) DegreeNow.Add(cap.ZoneIndex, 0);
+	}
+	auto ZoneBelowCap = [&](int32 Z)->bool{
+		const int32 cap = DegreeCap.Contains(Z) ? DegreeCap[Z] : -1;
+		const int32 deg = DegreeNow.Contains(Z) ? DegreeNow[Z] : 0;
+		return (cap < 0) || (deg < cap);
+	};
+
+	// Randomize pair order
+	TArray<FIntPoint> Pairs; Pairs.Reserve(PairToA.Num());
+	for (const auto& kv : PairToA) Pairs.Add(kv.Key);
+	Algo::RandomShuffle(Pairs);
+
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+	auto InBounds2 = [&](int x,int y){ return x>=0 && y>=0 && x<W && y<H; };
+
+	for (const FIntPoint& Key : Pairs) // (ZoneA=min, ZoneB=max)
+	{
+		const TSet<FIntPoint>* ASetPtr = PairToA.Find(Key);
+		const TSet<FIntPoint>* BSetPtr = PairToB.Find(Key);
+		if (!ASetPtr || !BSetPtr || ASetPtr->Num()==0 || BSetPtr->Num()==0) continue;
+		if (!ZoneBelowCap(Key.X) || !ZoneBelowCap(Key.Y)) continue;
+
+		// Candidate anchors on A side
+		TArray<FIntPoint> ACands;
+		ACands.Reserve(ASetPtr->Num());
+		for (const FIntPoint& c : *ASetPtr) ACands.Add(c);
+		Algo::RandomShuffle(ACands);
+
+		bool bCarved = false;
+		int32 attemptsLeft = FMath::Max(1, Settings->AttemptsPerPair);
+
+		// Try up to AttemptsPerPair different anchors
+		for (int32 attempt = 0; attempt < attemptsLeft && !bCarved; ++attempt)
+		{
+			if (ACands.Num() == 0) break;
+			const int32 pick = RNG.RandRange(0, ACands.Num()-1);
+			const FIntPoint AnchorA = ACands[pick];
+			ACands.RemoveAtSwap(pick);
+
+			// Determine boundary orientation by checking B neighbors around the anchor
+			bool bVertical=false; int dxToB=0, dyToB=0;
+			if (BSetPtr->Contains(FIntPoint(AnchorA.X+1,AnchorA.Y))) { dxToB=+1; dyToB=0; bVertical=true; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X-1,AnchorA.Y))) { dxToB=-1; dyToB=0; bVertical=true; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X,AnchorA.Y+1))) { dxToB=0; dyToB=+1; bVertical=false; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X,AnchorA.Y-1))) { dxToB=0; dyToB=-1; bVertical=false; }
+			else
+			{
+				// Fallback: pick any B cell and infer direction
+				const TSet<FIntPoint>& BSet = *BSetPtr;
+				int32 j=0, idx = RNG.RandRange(0, BSet.Num()-1);
+				FIntPoint anyB = AnchorA;
+				for (const FIntPoint& b : BSet) { if (j++==idx){ anyB=b; break; } }
+				dxToB = FMath::Clamp(anyB.X-AnchorA.X,-1,1);
+				dyToB = FMath::Clamp(anyB.Y-AnchorA.Y,-1,1);
+				bVertical = (dxToB!=0);
+			}
+
+			// Preview stripe to carve (no map modification yet)
+			TArray<FIntPoint> ToClearA, ToClearB;
+			if (!BuildCarveStripePreview(Map, AnchorA, bVertical, dxToB, dyToB,
+				Settings->PassageWidth, Key.X, Key.Y, ToClearA, ToClearB))
+			{
+				continue; // invalid anchor: would exit bounds or hit wrong zones
+			}
+
+			// Spacing check (global)
+			TArray<FIntPoint> Preview;
+			Preview.Reserve(ToClearA.Num() + ToClearB.Num());
+			Preview.Append(ToClearA); Preview.Append(ToClearB);
+			if (IsTooCloseToExistingPassages(Preview, Settings->MinPassageDistance))
+			{
+				continue; // too close to existing passages
+			}
+
+			// Carve for real
+			for (const FIntPoint& p : ToClearA) ClearCell(Map, p.X, p.Y);
+			for (const FIntPoint& p : ToClearB) ClearCell(Map, p.X, p.Y);
+
+			// Record passage
+			FZonePassage Pass; 
+			Pass.ZoneA = Key.X; Pass.ZoneB = Key.Y;
+			Pass.Cells = MoveTemp(Preview);
+			Passages.Add(MoveTemp(Pass));
+			DegreeNow[Key.X]++; DegreeNow[Key.Y]++;
+
+\t\t\t// (no zone reassignment for passage cells)
+#include "ZoneBorderGenerator.h"
+#include "DrawDebugHelpers.h"
+#include "Algo/RandomShuffle.h"
+#include "DigEmpire/Map/MapGrid2D.h"
+
+bool UZoneBorderGenerator::Generate(UMapGrid2D* MapGrid,
+                                    const TArray<int32>& ZoneLabels,
+                                    const UZoneBorderSettings* Settings)
+{
+	if (!ValidateInputs(MapGrid, ZoneLabels, Settings))
+		return false;
+
+	CachedLabels = ZoneLabels;
+	CachedSize = MapGrid->GetSize();
+	Passages.Reset();
+
+	// ZoneBorderGenerator.cpp (inside Generate)
+	TMap<FIntPoint, TSet<FIntPoint>> PairToA, PairToB;
+	CollectZoneBoundaries(CachedLabels, PairToA, PairToB);
+
+	// 1) Place walls first
+	PlaceWallsWithThickness(MapGrid, Settings, PairToA);
+
+	// 2) Then carve passages
+	ChooseAndCarvePassages(MapGrid, Settings, PairToA, PairToB);
+
+	return true;
+}
+\t\t\t// Debug
+\t\t\tif (Settings->bDebugDrawPassages)
+\t\t\t{
+\t\t\t\tDebugDrawPassageCells(Settings, Passages.Last().Cells, FColor::MakeRandomColor(), Map->GetWorld());
+\t\t\t}
+#include "ZoneBorderGenerator.h"
+#include "DrawDebugHelpers.h"
+#include "Algo/RandomShuffle.h"
+#include "DigEmpire/Map/MapGrid2D.h"
+
+bool UZoneBorderGenerator::Generate(UMapGrid2D* MapGrid,
+                                    const TArray<int32>& ZoneLabels,
+                                    const UZoneBorderSettings* Settings)
+{
+	if (!ValidateInputs(MapGrid, ZoneLabels, Settings))
+		return false;
+
+	CachedLabels = ZoneLabels;
+	CachedSize = MapGrid->GetSize();
+	Passages.Reset();
+
+	// ZoneBorderGenerator.cpp (inside Generate)
+	TMap<FIntPoint, TSet<FIntPoint>> PairToA, PairToB;
+	CollectZoneBoundaries(CachedLabels, PairToA, PairToB);
+
+	// 1) Place walls first
+	PlaceWallsWithThickness(MapGrid, Settings, PairToA);
+
+	// 2) Then carve passages
+	ChooseAndCarvePassages(MapGrid, Settings, PairToA, PairToB);
+
+	return true;
+}
+
+TArray<FIntPoint> UZoneBorderGenerator::GetFreeCellsForZone(UMapGrid2D* MapGrid, int32 ZoneId) const
+{
+	TArray<FIntPoint> Out;
+	if (!MapGrid || CachedLabels.Num() != CachedSize.X * CachedSize.Y) return Out;
+	if (ZoneId < 0) return Out;
+
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+
+	for (int32 y = 0; y < H; ++y)
+	{
+		for (int32 x = 0; x < W; ++x)
+		{
+			const int32 id = Idx(x,y,W);
+			if (CachedLabels[id] != ZoneId) continue;
+
+			FGameplayTag Obj; int32 Durability = 0;
+			const bool bHasObj = MapGrid->GetObjectAt(x, y, Obj, Durability);
+			if (bHasObj && Obj.IsValid() && Durability > 0) continue;
+
+			Out.Add(FIntPoint(x,y));
+		}
+	}
+	return Out;
+}
+
+
+bool UZoneBorderGenerator::ValidateInputs(const UMapGrid2D* Map,
+                                          const TArray<int32>& Labels,
+                                          const UZoneBorderSettings* Settings) const
+{
+	if (!Map || !Settings) return false;
+	const FIntPoint S = Map->GetSize();
+	if (S.X <= 0 || S.Y <= 0) return false;
+	if (Labels.Num() != S.X * S.Y) return false;
+	if (!Settings->WallObjectTag.IsValid() || Settings->WallDurability <= 0) return false;
+	if (Settings->BorderThickness < 1 || Settings->PassageWidth < 1) return false;
+	return true;
+}
+
+void UZoneBorderGenerator::CollectZoneBoundaries(const TArray<int32>& Labels,
+                                                 TMap<FIntPoint, TSet<FIntPoint>>& OutPairToA,
+                                                 TMap<FIntPoint, TSet<FIntPoint>>& OutPairToB) const
+{
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+
+	auto PairKey = [](int32 A, int32 B)->FIntPoint
+	{
+		return (A < B) ? FIntPoint(A,B) : FIntPoint(B,A);
+	};
+
+	for (int32 y = 0; y < H; ++y)
+	{
+		for (int32 x = 0; x < W; ++x)
+		{
+			const int32 z = Labels[Idx(x,y,W)];
+			if (z < 0) continue;
+
+			// Right neighbor
+			if (x < W - 1)
+			{
+				const int32 z2 = Labels[Idx(x+1,y,W)];
+				if (z2 >= 0 && z2 != z)
+				{
+					const FIntPoint Key = PairKey(z, z2);
+					// Put the left cell into the lower-id side set
+					if (Key.X == z)  { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x,   y)); }
+					else             { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x+1, y)); }
+					// And mirror to B side
+					if (Key.Y == z)  { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x,   y)); }
+					else             { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x+1, y)); }
+				}
+			}
+			// Up neighbor
+			if (y < H - 1)
+			{
+				const int32 z2 = Labels[Idx(x,y+1,W)];
+				if (z2 >= 0 && z2 != z)
+				{
+					const FIntPoint Key = PairKey(z, z2);
+					if (Key.X == z)  { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x, y  )); }
+					else             { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x, y+1)); }
+					if (Key.Y == z)  { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x, y  )); }
+					else             { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x, y+1)); }
+				}
+			}
+		}
+	}
+}
+
+void UZoneBorderGenerator::ChooseAndCarvePassages(
+	UMapGrid2D* Map,
+	const UZoneBorderSettings* Settings,
+	const TMap<FIntPoint, TSet<FIntPoint>>& PairToA,
+	const TMap<FIntPoint, TSet<FIntPoint>>& PairToB)
+{
+	const int32 Seed = (Settings->RandomSeed >= 0) ? Settings->RandomSeed : FMath::Rand();
+	FRandomStream RNG(Seed);
+
+	PassageMask.Reset();
+	Passages.Reset();
+
+	// Degree caps
+	TMap<int32,int32> DegreeCap, DegreeNow;
+	TSet<int32> ZonesInvolved;
+	for (const auto& kv : PairToA) { ZonesInvolved.Add(kv.Key.X); ZonesInvolved.Add(kv.Key.Y); }
+	for (int32 z : ZonesInvolved) { DegreeNow.Add(z, 0); DegreeCap.Add(z, -1); }
+	for (const FZonePassageCap& cap : Settings->DegreeCaps)
+	{
+		DegreeCap.FindOrAdd(cap.ZoneIndex) = cap.MaxPassages;
+		if (!DegreeNow.Contains(cap.ZoneIndex)) DegreeNow.Add(cap.ZoneIndex, 0);
+	}
+	auto ZoneBelowCap = [&](int32 Z)->bool{
+		const int32 cap = DegreeCap.Contains(Z) ? DegreeCap[Z] : -1;
+		const int32 deg = DegreeNow.Contains(Z) ? DegreeNow[Z] : 0;
+		return (cap < 0) || (deg < cap);
+	};
+
+	// Randomize pair order
+	TArray<FIntPoint> Pairs; Pairs.Reserve(PairToA.Num());
+	for (const auto& kv : PairToA) Pairs.Add(kv.Key);
+	Algo::RandomShuffle(Pairs);
+
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+	auto InBounds2 = [&](int x,int y){ return x>=0 && y>=0 && x<W && y<H; };
+
+	for (const FIntPoint& Key : Pairs) // (ZoneA=min, ZoneB=max)
+	{
+		const TSet<FIntPoint>* ASetPtr = PairToA.Find(Key);
+		const TSet<FIntPoint>* BSetPtr = PairToB.Find(Key);
+		if (!ASetPtr || !BSetPtr || ASetPtr->Num()==0 || BSetPtr->Num()==0) continue;
+		if (!ZoneBelowCap(Key.X) || !ZoneBelowCap(Key.Y)) continue;
+
+		// Candidate anchors on A side
+		TArray<FIntPoint> ACands;
+		ACands.Reserve(ASetPtr->Num());
+		for (const FIntPoint& c : *ASetPtr) ACands.Add(c);
+		Algo::RandomShuffle(ACands);
+
+		bool bCarved = false;
+		int32 attemptsLeft = FMath::Max(1, Settings->AttemptsPerPair);
+
+		// Try up to AttemptsPerPair different anchors
+		for (int32 attempt = 0; attempt < attemptsLeft && !bCarved; ++attempt)
+		{
+			if (ACands.Num() == 0) break;
+			const int32 pick = RNG.RandRange(0, ACands.Num()-1);
+			const FIntPoint AnchorA = ACands[pick];
+			ACands.RemoveAtSwap(pick);
+
+			// Determine boundary orientation by checking B neighbors around the anchor
+			bool bVertical=false; int dxToB=0, dyToB=0;
+			if (BSetPtr->Contains(FIntPoint(AnchorA.X+1,AnchorA.Y))) { dxToB=+1; dyToB=0; bVertical=true; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X-1,AnchorA.Y))) { dxToB=-1; dyToB=0; bVertical=true; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X,AnchorA.Y+1))) { dxToB=0; dyToB=+1; bVertical=false; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X,AnchorA.Y-1))) { dxToB=0; dyToB=-1; bVertical=false; }
+			else
+			{
+				// Fallback: pick any B cell and infer direction
+				const TSet<FIntPoint>& BSet = *BSetPtr;
+				int32 j=0, idx = RNG.RandRange(0, BSet.Num()-1);
+				FIntPoint anyB = AnchorA;
+				for (const FIntPoint& b : BSet) { if (j++==idx){ anyB=b; break; } }
+				dxToB = FMath::Clamp(anyB.X-AnchorA.X,-1,1);
+				dyToB = FMath::Clamp(anyB.Y-AnchorA.Y,-1,1);
+				bVertical = (dxToB!=0);
+			}
+
+			// Preview stripe to carve (no map modification yet)
+			TArray<FIntPoint> ToClearA, ToClearB;
+			if (!BuildCarveStripePreview(Map, AnchorA, bVertical, dxToB, dyToB,
+				Settings->PassageWidth, Key.X, Key.Y, ToClearA, ToClearB))
+			{
+				continue; // invalid anchor: would exit bounds or hit wrong zones
+			}
+
+			// Spacing check (global)
+			TArray<FIntPoint> Preview;
+			Preview.Reserve(ToClearA.Num() + ToClearB.Num());
+			Preview.Append(ToClearA); Preview.Append(ToClearB);
+			if (IsTooCloseToExistingPassages(Preview, Settings->MinPassageDistance))
+			{
+				continue; // too close to existing passages
+			}
+
+			// Carve for real
+			for (const FIntPoint& p : ToClearA) ClearCell(Map, p.X, p.Y);
+			for (const FIntPoint& p : ToClearB) ClearCell(Map, p.X, p.Y);
+
+			// Record passage
+			FZonePassage Pass; 
+			Pass.ZoneA = Key.X; Pass.ZoneB = Key.Y;
+			Pass.Cells = MoveTemp(Preview);
+			Passages.Add(MoveTemp(Pass));
+			DegreeNow[Key.X]++; DegreeNow[Key.Y]++;
+
+\t\t\t// (no zone reassignment for passage cells)
+#include "ZoneBorderGenerator.h"
+#include "DrawDebugHelpers.h"
+#include "Algo/RandomShuffle.h"
+#include "DigEmpire/Map/MapGrid2D.h"
+
+bool UZoneBorderGenerator::Generate(UMapGrid2D* MapGrid,
+                                    const TArray<int32>& ZoneLabels,
+                                    const UZoneBorderSettings* Settings)
+{
+	if (!ValidateInputs(MapGrid, ZoneLabels, Settings))
+		return false;
+
+	CachedLabels = ZoneLabels;
+	CachedSize = MapGrid->GetSize();
+	Passages.Reset();
+
+	// ZoneBorderGenerator.cpp (inside Generate)
+	TMap<FIntPoint, TSet<FIntPoint>> PairToA, PairToB;
+	CollectZoneBoundaries(CachedLabels, PairToA, PairToB);
+
+	// 1) Place walls first
+	PlaceWallsWithThickness(MapGrid, Settings, PairToA);
+
+	// 2) Then carve passages
+	ChooseAndCarvePassages(MapGrid, Settings, PairToA, PairToB);
+
+	return true;
+}
+
+TArray<FIntPoint> UZoneBorderGenerator::GetFreeCellsForZone(UMapGrid2D* MapGrid, int32 ZoneId) const
+{
+	TArray<FIntPoint> Out;
+	if (!MapGrid || CachedLabels.Num() != CachedSize.X * CachedSize.Y) return Out;
+	if (ZoneId < 0) return Out;
+
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+
+	for (int32 y = 0; y < H; ++y)
+	{
+		for (int32 x = 0; x < W; ++x)
+		{
+			const int32 id = Idx(x,y,W);
+			if (CachedLabels[id] != ZoneId) continue;
+
+			FGameplayTag Obj; int32 Durability = 0;
+			const bool bHasObj = MapGrid->GetObjectAt(x, y, Obj, Durability);
+			if (bHasObj && Obj.IsValid() && Durability > 0) continue;
+
+			Out.Add(FIntPoint(x,y));
+		}
+	}
+	return Out;
+}
+
+
+bool UZoneBorderGenerator::ValidateInputs(const UMapGrid2D* Map,
+                                          const TArray<int32>& Labels,
+                                          const UZoneBorderSettings* Settings) const
+{
+	if (!Map || !Settings) return false;
+	const FIntPoint S = Map->GetSize();
+	if (S.X <= 0 || S.Y <= 0) return false;
+	if (Labels.Num() != S.X * S.Y) return false;
+	if (!Settings->WallObjectTag.IsValid() || Settings->WallDurability <= 0) return false;
+	if (Settings->BorderThickness < 1 || Settings->PassageWidth < 1) return false;
+	return true;
+}
+
+void UZoneBorderGenerator::CollectZoneBoundaries(const TArray<int32>& Labels,
+                                                 TMap<FIntPoint, TSet<FIntPoint>>& OutPairToA,
+                                                 TMap<FIntPoint, TSet<FIntPoint>>& OutPairToB) const
+{
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+
+	auto PairKey = [](int32 A, int32 B)->FIntPoint
+	{
+		return (A < B) ? FIntPoint(A,B) : FIntPoint(B,A);
+	};
+
+	for (int32 y = 0; y < H; ++y)
+	{
+		for (int32 x = 0; x < W; ++x)
+		{
+			const int32 z = Labels[Idx(x,y,W)];
+			if (z < 0) continue;
+
+			// Right neighbor
+			if (x < W - 1)
+			{
+				const int32 z2 = Labels[Idx(x+1,y,W)];
+				if (z2 >= 0 && z2 != z)
+				{
+					const FIntPoint Key = PairKey(z, z2);
+					// Put the left cell into the lower-id side set
+					if (Key.X == z)  { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x,   y)); }
+					else             { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x+1, y)); }
+					// And mirror to B side
+					if (Key.Y == z)  { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x,   y)); }
+					else             { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x+1, y)); }
+				}
+			}
+			// Up neighbor
+			if (y < H - 1)
+			{
+				const int32 z2 = Labels[Idx(x,y+1,W)];
+				if (z2 >= 0 && z2 != z)
+				{
+					const FIntPoint Key = PairKey(z, z2);
+					if (Key.X == z)  { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x, y  )); }
+					else             { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x, y+1)); }
+					if (Key.Y == z)  { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x, y  )); }
+					else             { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x, y+1)); }
+				}
+			}
+		}
+	}
+}
+
+void UZoneBorderGenerator::ChooseAndCarvePassages(
+	UMapGrid2D* Map,
+	const UZoneBorderSettings* Settings,
+	const TMap<FIntPoint, TSet<FIntPoint>>& PairToA,
+	const TMap<FIntPoint, TSet<FIntPoint>>& PairToB)
+{
+	const int32 Seed = (Settings->RandomSeed >= 0) ? Settings->RandomSeed : FMath::Rand();
+	FRandomStream RNG(Seed);
+
+	PassageMask.Reset();
+	Passages.Reset();
+
+	// Degree caps
+	TMap<int32,int32> DegreeCap, DegreeNow;
+	TSet<int32> ZonesInvolved;
+	for (const auto& kv : PairToA) { ZonesInvolved.Add(kv.Key.X); ZonesInvolved.Add(kv.Key.Y); }
+	for (int32 z : ZonesInvolved) { DegreeNow.Add(z, 0); DegreeCap.Add(z, -1); }
+	for (const FZonePassageCap& cap : Settings->DegreeCaps)
+	{
+		DegreeCap.FindOrAdd(cap.ZoneIndex) = cap.MaxPassages;
+		if (!DegreeNow.Contains(cap.ZoneIndex)) DegreeNow.Add(cap.ZoneIndex, 0);
+	}
+	auto ZoneBelowCap = [&](int32 Z)->bool{
+		const int32 cap = DegreeCap.Contains(Z) ? DegreeCap[Z] : -1;
+		const int32 deg = DegreeNow.Contains(Z) ? DegreeNow[Z] : 0;
+		return (cap < 0) || (deg < cap);
+	};
+
+	// Randomize pair order
+	TArray<FIntPoint> Pairs; Pairs.Reserve(PairToA.Num());
+	for (const auto& kv : PairToA) Pairs.Add(kv.Key);
+	Algo::RandomShuffle(Pairs);
+
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+	auto InBounds2 = [&](int x,int y){ return x>=0 && y>=0 && x<W && y<H; };
+
+	for (const FIntPoint& Key : Pairs) // (ZoneA=min, ZoneB=max)
+	{
+		const TSet<FIntPoint>* ASetPtr = PairToA.Find(Key);
+		const TSet<FIntPoint>* BSetPtr = PairToB.Find(Key);
+		if (!ASetPtr || !BSetPtr || ASetPtr->Num()==0 || BSetPtr->Num()==0) continue;
+		if (!ZoneBelowCap(Key.X) || !ZoneBelowCap(Key.Y)) continue;
+
+		// Candidate anchors on A side
+		TArray<FIntPoint> ACands;
+		ACands.Reserve(ASetPtr->Num());
+		for (const FIntPoint& c : *ASetPtr) ACands.Add(c);
+		Algo::RandomShuffle(ACands);
+
+		bool bCarved = false;
+		int32 attemptsLeft = FMath::Max(1, Settings->AttemptsPerPair);
+
+		// Try up to AttemptsPerPair different anchors
+		for (int32 attempt = 0; attempt < attemptsLeft && !bCarved; ++attempt)
+		{
+			if (ACands.Num() == 0) break;
+			const int32 pick = RNG.RandRange(0, ACands.Num()-1);
+			const FIntPoint AnchorA = ACands[pick];
+			ACands.RemoveAtSwap(pick);
+
+			// Determine boundary orientation by checking B neighbors around the anchor
+			bool bVertical=false; int dxToB=0, dyToB=0;
+			if (BSetPtr->Contains(FIntPoint(AnchorA.X+1,AnchorA.Y))) { dxToB=+1; dyToB=0; bVertical=true; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X-1,AnchorA.Y))) { dxToB=-1; dyToB=0; bVertical=true; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X,AnchorA.Y+1))) { dxToB=0; dyToB=+1; bVertical=false; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X,AnchorA.Y-1))) { dxToB=0; dyToB=-1; bVertical=false; }
+			else
+			{
+				// Fallback: pick any B cell and infer direction
+				const TSet<FIntPoint>& BSet = *BSetPtr;
+				int32 j=0, idx = RNG.RandRange(0, BSet.Num()-1);
+				FIntPoint anyB = AnchorA;
+				for (const FIntPoint& b : BSet) { if (j++==idx){ anyB=b; break; } }
+				dxToB = FMath::Clamp(anyB.X-AnchorA.X,-1,1);
+				dyToB = FMath::Clamp(anyB.Y-AnchorA.Y,-1,1);
+				bVertical = (dxToB!=0);
+			}
+
+			// Preview stripe to carve (no map modification yet)
+			TArray<FIntPoint> ToClearA, ToClearB;
+			if (!BuildCarveStripePreview(Map, AnchorA, bVertical, dxToB, dyToB,
+				Settings->PassageWidth, Key.X, Key.Y, ToClearA, ToClearB))
+			{
+				continue; // invalid anchor: would exit bounds or hit wrong zones
+			}
+
+			// Spacing check (global)
+			TArray<FIntPoint> Preview;
+			Preview.Reserve(ToClearA.Num() + ToClearB.Num());
+			Preview.Append(ToClearA); Preview.Append(ToClearB);
+			if (IsTooCloseToExistingPassages(Preview, Settings->MinPassageDistance))
+			{
+				continue; // too close to existing passages
+			}
+
+			// Carve for real
+			for (const FIntPoint& p : ToClearA) ClearCell(Map, p.X, p.Y);
+			for (const FIntPoint& p : ToClearB) ClearCell(Map, p.X, p.Y);
+
+			// Record passage
+			FZonePassage Pass; 
+			Pass.ZoneA = Key.X; Pass.ZoneB = Key.Y;
+			Pass.Cells = MoveTemp(Preview);
+			Passages.Add(MoveTemp(Pass));
+			DegreeNow[Key.X]++; DegreeNow[Key.Y]++;
+
+			// Assign each passage cell to the adjacent majority zone (A or B) based on 4-neighbors
+			for (const FIntPoint& Cell : Passages.Last().Cells)
+			{
+				const int32 lid = Idx(Cell.X, Cell.Y, CachedSize.X);
+				if (lid < 0 || lid >= CachedLabels.Num()) continue;
+				int32 countA = 0, countB = 0;
+				const FIntPoint N4[4] = { FIntPoint(Cell.X+1,Cell.Y), FIntPoint(Cell.X-1,Cell.Y), FIntPoint(Cell.X,Cell.Y+1), FIntPoint(Cell.X,Cell.Y-1) };
+				for (const FIntPoint& n : N4)
+				{
+					if (!InBounds(n.X, n.Y)) continue;
+					const int32 nid = Idx(n.X, n.Y, CachedSize.X);
+					if (nid < 0 || nid >= CachedLabels.Num()) continue;
+					const int32 z = CachedLabels[nid];
+					if (z == Key.X) ++countA; else if (z == Key.Y) ++countB;
+				}
+				int32 target = CachedLabels[lid];
+				if (countA > countB) target = Key.X; else if (countB > countA) target = Key.Y; // tie: keep current
+				if (target != CachedLabels[lid])
+				{
+					CachedLabels[lid] = target;
+					Map->SetZoneAt(Cell.X, Cell.Y, target);
+				}
+			}
+
+			// Update protection mask: passage cells + dilation to protect from any walls & enforce spacing
+			for (const FIntPoint& c : Passages.Last().Cells) PassageMask.Add(c);
+			DilateMask(PassageMask, FMath::Max(0, Settings->BorderThickness - 1)); // shield from thick borders
+			DilateMask(PassageMask, Settings->MinPassageDistance);                  // spacing for future passages
+
+			// Debug
+			if (Settings->bDebugDrawPassages)
+			{
+				DebugDrawPassageCells(Settings, Passages.Last().Cells, FColor::MakeRandomColor(), Map->GetWorld());
+			}
+#include "ZoneBorderGenerator.h"
+#include "DrawDebugHelpers.h"
+#include "Algo/RandomShuffle.h"
+#include "DigEmpire/Map/MapGrid2D.h"
+
+bool UZoneBorderGenerator::Generate(UMapGrid2D* MapGrid,
+                                    const TArray<int32>& ZoneLabels,
+                                    const UZoneBorderSettings* Settings)
+{
+	if (!ValidateInputs(MapGrid, ZoneLabels, Settings))
+		return false;
+
+	CachedLabels = ZoneLabels;
+	CachedSize = MapGrid->GetSize();
+	Passages.Reset();
+
+	// ZoneBorderGenerator.cpp (inside Generate)
+	TMap<FIntPoint, TSet<FIntPoint>> PairToA, PairToB;
+	CollectZoneBoundaries(CachedLabels, PairToA, PairToB);
+
+	// 1) Place walls first
+	PlaceWallsWithThickness(MapGrid, Settings, PairToA);
+
+	// 2) Then carve passages
+	ChooseAndCarvePassages(MapGrid, Settings, PairToA, PairToB);
+
+	return true;
+}
+
+TArray<FIntPoint> UZoneBorderGenerator::GetFreeCellsForZone(UMapGrid2D* MapGrid, int32 ZoneId) const
+{
+	TArray<FIntPoint> Out;
+	if (!MapGrid || CachedLabels.Num() != CachedSize.X * CachedSize.Y) return Out;
+	if (ZoneId < 0) return Out;
+
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+
+	for (int32 y = 0; y < H; ++y)
+	{
+		for (int32 x = 0; x < W; ++x)
+		{
+			const int32 id = Idx(x,y,W);
+			if (CachedLabels[id] != ZoneId) continue;
+
+			FGameplayTag Obj; int32 Durability = 0;
+			const bool bHasObj = MapGrid->GetObjectAt(x, y, Obj, Durability);
+			if (bHasObj && Obj.IsValid() && Durability > 0) continue;
+
+			Out.Add(FIntPoint(x,y));
+		}
+	}
+	return Out;
+}
+
+
+bool UZoneBorderGenerator::ValidateInputs(const UMapGrid2D* Map,
+                                          const TArray<int32>& Labels,
+                                          const UZoneBorderSettings* Settings) const
+{
+	if (!Map || !Settings) return false;
+	const FIntPoint S = Map->GetSize();
+	if (S.X <= 0 || S.Y <= 0) return false;
+	if (Labels.Num() != S.X * S.Y) return false;
+	if (!Settings->WallObjectTag.IsValid() || Settings->WallDurability <= 0) return false;
+	if (Settings->BorderThickness < 1 || Settings->PassageWidth < 1) return false;
+	return true;
+}
+
+void UZoneBorderGenerator::CollectZoneBoundaries(const TArray<int32>& Labels,
+                                                 TMap<FIntPoint, TSet<FIntPoint>>& OutPairToA,
+                                                 TMap<FIntPoint, TSet<FIntPoint>>& OutPairToB) const
+{
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+
+	auto PairKey = [](int32 A, int32 B)->FIntPoint
+	{
+		return (A < B) ? FIntPoint(A,B) : FIntPoint(B,A);
+	};
+
+	for (int32 y = 0; y < H; ++y)
+	{
+		for (int32 x = 0; x < W; ++x)
+		{
+			const int32 z = Labels[Idx(x,y,W)];
+			if (z < 0) continue;
+
+			// Right neighbor
+			if (x < W - 1)
+			{
+				const int32 z2 = Labels[Idx(x+1,y,W)];
+				if (z2 >= 0 && z2 != z)
+				{
+					const FIntPoint Key = PairKey(z, z2);
+					// Put the left cell into the lower-id side set
+					if (Key.X == z)  { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x,   y)); }
+					else             { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x+1, y)); }
+					// And mirror to B side
+					if (Key.Y == z)  { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x,   y)); }
+					else             { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x+1, y)); }
+				}
+			}
+			// Up neighbor
+			if (y < H - 1)
+			{
+				const int32 z2 = Labels[Idx(x,y+1,W)];
+				if (z2 >= 0 && z2 != z)
+				{
+					const FIntPoint Key = PairKey(z, z2);
+					if (Key.X == z)  { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x, y  )); }
+					else             { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x, y+1)); }
+					if (Key.Y == z)  { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x, y  )); }
+					else             { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x, y+1)); }
+				}
+			}
+		}
+	}
+}
+
+void UZoneBorderGenerator::ChooseAndCarvePassages(
+	UMapGrid2D* Map,
+	const UZoneBorderSettings* Settings,
+	const TMap<FIntPoint, TSet<FIntPoint>>& PairToA,
+	const TMap<FIntPoint, TSet<FIntPoint>>& PairToB)
+{
+	const int32 Seed = (Settings->RandomSeed >= 0) ? Settings->RandomSeed : FMath::Rand();
+	FRandomStream RNG(Seed);
+
+	PassageMask.Reset();
+	Passages.Reset();
+
+	// Degree caps
+	TMap<int32,int32> DegreeCap, DegreeNow;
+	TSet<int32> ZonesInvolved;
+	for (const auto& kv : PairToA) { ZonesInvolved.Add(kv.Key.X); ZonesInvolved.Add(kv.Key.Y); }
+	for (int32 z : ZonesInvolved) { DegreeNow.Add(z, 0); DegreeCap.Add(z, -1); }
+	for (const FZonePassageCap& cap : Settings->DegreeCaps)
+	{
+		DegreeCap.FindOrAdd(cap.ZoneIndex) = cap.MaxPassages;
+		if (!DegreeNow.Contains(cap.ZoneIndex)) DegreeNow.Add(cap.ZoneIndex, 0);
+	}
+	auto ZoneBelowCap = [&](int32 Z)->bool{
+		const int32 cap = DegreeCap.Contains(Z) ? DegreeCap[Z] : -1;
+		const int32 deg = DegreeNow.Contains(Z) ? DegreeNow[Z] : 0;
+		return (cap < 0) || (deg < cap);
+	};
+
+	// Randomize pair order
+	TArray<FIntPoint> Pairs; Pairs.Reserve(PairToA.Num());
+	for (const auto& kv : PairToA) Pairs.Add(kv.Key);
+	Algo::RandomShuffle(Pairs);
+
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+	auto InBounds2 = [&](int x,int y){ return x>=0 && y>=0 && x<W && y<H; };
+
+	for (const FIntPoint& Key : Pairs) // (ZoneA=min, ZoneB=max)
+	{
+		const TSet<FIntPoint>* ASetPtr = PairToA.Find(Key);
+		const TSet<FIntPoint>* BSetPtr = PairToB.Find(Key);
+		if (!ASetPtr || !BSetPtr || ASetPtr->Num()==0 || BSetPtr->Num()==0) continue;
+		if (!ZoneBelowCap(Key.X) || !ZoneBelowCap(Key.Y)) continue;
+
+		// Candidate anchors on A side
+		TArray<FIntPoint> ACands;
+		ACands.Reserve(ASetPtr->Num());
+		for (const FIntPoint& c : *ASetPtr) ACands.Add(c);
+		Algo::RandomShuffle(ACands);
+
+		bool bCarved = false;
+		int32 attemptsLeft = FMath::Max(1, Settings->AttemptsPerPair);
+
+		// Try up to AttemptsPerPair different anchors
+		for (int32 attempt = 0; attempt < attemptsLeft && !bCarved; ++attempt)
+		{
+			if (ACands.Num() == 0) break;
+			const int32 pick = RNG.RandRange(0, ACands.Num()-1);
+			const FIntPoint AnchorA = ACands[pick];
+			ACands.RemoveAtSwap(pick);
+
+			// Determine boundary orientation by checking B neighbors around the anchor
+			bool bVertical=false; int dxToB=0, dyToB=0;
+			if (BSetPtr->Contains(FIntPoint(AnchorA.X+1,AnchorA.Y))) { dxToB=+1; dyToB=0; bVertical=true; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X-1,AnchorA.Y))) { dxToB=-1; dyToB=0; bVertical=true; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X,AnchorA.Y+1))) { dxToB=0; dyToB=+1; bVertical=false; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X,AnchorA.Y-1))) { dxToB=0; dyToB=-1; bVertical=false; }
+			else
+			{
+				// Fallback: pick any B cell and infer direction
+				const TSet<FIntPoint>& BSet = *BSetPtr;
+				int32 j=0, idx = RNG.RandRange(0, BSet.Num()-1);
+				FIntPoint anyB = AnchorA;
+				for (const FIntPoint& b : BSet) { if (j++==idx){ anyB=b; break; } }
+				dxToB = FMath::Clamp(anyB.X-AnchorA.X,-1,1);
+				dyToB = FMath::Clamp(anyB.Y-AnchorA.Y,-1,1);
+				bVertical = (dxToB!=0);
+			}
+
+			// Preview stripe to carve (no map modification yet)
+			TArray<FIntPoint> ToClearA, ToClearB;
+			if (!BuildCarveStripePreview(Map, AnchorA, bVertical, dxToB, dyToB,
+				Settings->PassageWidth, Key.X, Key.Y, ToClearA, ToClearB))
+			{
+				continue; // invalid anchor: would exit bounds or hit wrong zones
+			}
+
+			// Spacing check (global)
+			TArray<FIntPoint> Preview;
+			Preview.Reserve(ToClearA.Num() + ToClearB.Num());
+			Preview.Append(ToClearA); Preview.Append(ToClearB);
+			if (IsTooCloseToExistingPassages(Preview, Settings->MinPassageDistance))
+			{
+				continue; // too close to existing passages
+			}
+
+			// Carve for real
+			for (const FIntPoint& p : ToClearA) ClearCell(Map, p.X, p.Y);
+			for (const FIntPoint& p : ToClearB) ClearCell(Map, p.X, p.Y);
+
+			// Record passage
+			FZonePassage Pass; 
+			Pass.ZoneA = Key.X; Pass.ZoneB = Key.Y;
+			Pass.Cells = MoveTemp(Preview);
+			Passages.Add(MoveTemp(Pass));
+			DegreeNow[Key.X]++; DegreeNow[Key.Y]++;
+
+\t\t\t// (no zone reassignment for passage cells)
+#include "ZoneBorderGenerator.h"
+#include "DrawDebugHelpers.h"
+#include "Algo/RandomShuffle.h"
+#include "DigEmpire/Map/MapGrid2D.h"
+
+bool UZoneBorderGenerator::Generate(UMapGrid2D* MapGrid,
+                                    const TArray<int32>& ZoneLabels,
+                                    const UZoneBorderSettings* Settings)
+{
+	if (!ValidateInputs(MapGrid, ZoneLabels, Settings))
+		return false;
+
+	CachedLabels = ZoneLabels;
+	CachedSize = MapGrid->GetSize();
+	Passages.Reset();
+
+	// ZoneBorderGenerator.cpp (inside Generate)
+	TMap<FIntPoint, TSet<FIntPoint>> PairToA, PairToB;
+	CollectZoneBoundaries(CachedLabels, PairToA, PairToB);
+
+	// 1) Place walls first
+	PlaceWallsWithThickness(MapGrid, Settings, PairToA);
+
+	// 2) Then carve passages
+	ChooseAndCarvePassages(MapGrid, Settings, PairToA, PairToB);
+
+	return true;
+}
+\t\t\t// Debug
+\t\t\tif (Settings->bDebugDrawPassages)
+\t\t\t{
+\t\t\t\tDebugDrawPassageCells(Settings, Passages.Last().Cells, FColor::MakeRandomColor(), Map->GetWorld());
+\t\t\t}
+#include "ZoneBorderGenerator.h"
+#include "DrawDebugHelpers.h"
+#include "Algo/RandomShuffle.h"
+#include "DigEmpire/Map/MapGrid2D.h"
+
+bool UZoneBorderGenerator::Generate(UMapGrid2D* MapGrid,
+                                    const TArray<int32>& ZoneLabels,
+                                    const UZoneBorderSettings* Settings)
+{
+	if (!ValidateInputs(MapGrid, ZoneLabels, Settings))
+		return false;
+
+	CachedLabels = ZoneLabels;
+	CachedSize = MapGrid->GetSize();
+	Passages.Reset();
+
+	// ZoneBorderGenerator.cpp (inside Generate)
+	TMap<FIntPoint, TSet<FIntPoint>> PairToA, PairToB;
+	CollectZoneBoundaries(CachedLabels, PairToA, PairToB);
+
+	// 1) Place walls first
+	PlaceWallsWithThickness(MapGrid, Settings, PairToA);
+
+	// 2) Then carve passages
+	ChooseAndCarvePassages(MapGrid, Settings, PairToA, PairToB);
+
+	return true;
+}
+
+TArray<FIntPoint> UZoneBorderGenerator::GetFreeCellsForZone(UMapGrid2D* MapGrid, int32 ZoneId) const
+{
+	TArray<FIntPoint> Out;
+	if (!MapGrid || CachedLabels.Num() != CachedSize.X * CachedSize.Y) return Out;
+	if (ZoneId < 0) return Out;
+
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+
+	for (int32 y = 0; y < H; ++y)
+	{
+		for (int32 x = 0; x < W; ++x)
+		{
+			const int32 id = Idx(x,y,W);
+			if (CachedLabels[id] != ZoneId) continue;
+
+			FGameplayTag Obj; int32 Durability = 0;
+			const bool bHasObj = MapGrid->GetObjectAt(x, y, Obj, Durability);
+			if (bHasObj && Obj.IsValid() && Durability > 0) continue;
+
+			Out.Add(FIntPoint(x,y));
+		}
+	}
+	return Out;
+}
+
+
+bool UZoneBorderGenerator::ValidateInputs(const UMapGrid2D* Map,
+                                          const TArray<int32>& Labels,
+                                          const UZoneBorderSettings* Settings) const
+{
+	if (!Map || !Settings) return false;
+	const FIntPoint S = Map->GetSize();
+	if (S.X <= 0 || S.Y <= 0) return false;
+	if (Labels.Num() != S.X * S.Y) return false;
+	if (!Settings->WallObjectTag.IsValid() || Settings->WallDurability <= 0) return false;
+	if (Settings->BorderThickness < 1 || Settings->PassageWidth < 1) return false;
+	return true;
+}
+
+void UZoneBorderGenerator::CollectZoneBoundaries(const TArray<int32>& Labels,
+                                                 TMap<FIntPoint, TSet<FIntPoint>>& OutPairToA,
+                                                 TMap<FIntPoint, TSet<FIntPoint>>& OutPairToB) const
+{
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+
+	auto PairKey = [](int32 A, int32 B)->FIntPoint
+	{
+		return (A < B) ? FIntPoint(A,B) : FIntPoint(B,A);
+	};
+
+	for (int32 y = 0; y < H; ++y)
+	{
+		for (int32 x = 0; x < W; ++x)
+		{
+			const int32 z = Labels[Idx(x,y,W)];
+			if (z < 0) continue;
+
+			// Right neighbor
+			if (x < W - 1)
+			{
+				const int32 z2 = Labels[Idx(x+1,y,W)];
+				if (z2 >= 0 && z2 != z)
+				{
+					const FIntPoint Key = PairKey(z, z2);
+					// Put the left cell into the lower-id side set
+					if (Key.X == z)  { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x,   y)); }
+					else             { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x+1, y)); }
+					// And mirror to B side
+					if (Key.Y == z)  { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x,   y)); }
+					else             { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x+1, y)); }
+				}
+			}
+			// Up neighbor
+			if (y < H - 1)
+			{
+				const int32 z2 = Labels[Idx(x,y+1,W)];
+				if (z2 >= 0 && z2 != z)
+				{
+					const FIntPoint Key = PairKey(z, z2);
+					if (Key.X == z)  { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x, y  )); }
+					else             { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x, y+1)); }
+					if (Key.Y == z)  { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x, y  )); }
+					else             { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x, y+1)); }
+				}
+			}
+		}
+	}
+}
+
+void UZoneBorderGenerator::ChooseAndCarvePassages(
+	UMapGrid2D* Map,
+	const UZoneBorderSettings* Settings,
+	const TMap<FIntPoint, TSet<FIntPoint>>& PairToA,
+	const TMap<FIntPoint, TSet<FIntPoint>>& PairToB)
+{
+	const int32 Seed = (Settings->RandomSeed >= 0) ? Settings->RandomSeed : FMath::Rand();
+	FRandomStream RNG(Seed);
+
+	PassageMask.Reset();
+	Passages.Reset();
+
+	// Degree caps
+	TMap<int32,int32> DegreeCap, DegreeNow;
+	TSet<int32> ZonesInvolved;
+	for (const auto& kv : PairToA) { ZonesInvolved.Add(kv.Key.X); ZonesInvolved.Add(kv.Key.Y); }
+	for (int32 z : ZonesInvolved) { DegreeNow.Add(z, 0); DegreeCap.Add(z, -1); }
+	for (const FZonePassageCap& cap : Settings->DegreeCaps)
+	{
+		DegreeCap.FindOrAdd(cap.ZoneIndex) = cap.MaxPassages;
+		if (!DegreeNow.Contains(cap.ZoneIndex)) DegreeNow.Add(cap.ZoneIndex, 0);
+	}
+	auto ZoneBelowCap = [&](int32 Z)->bool{
+		const int32 cap = DegreeCap.Contains(Z) ? DegreeCap[Z] : -1;
+		const int32 deg = DegreeNow.Contains(Z) ? DegreeNow[Z] : 0;
+		return (cap < 0) || (deg < cap);
+	};
+
+	// Randomize pair order
+	TArray<FIntPoint> Pairs; Pairs.Reserve(PairToA.Num());
+	for (const auto& kv : PairToA) Pairs.Add(kv.Key);
+	Algo::RandomShuffle(Pairs);
+
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+	auto InBounds2 = [&](int x,int y){ return x>=0 && y>=0 && x<W && y<H; };
+
+	for (const FIntPoint& Key : Pairs) // (ZoneA=min, ZoneB=max)
+	{
+		const TSet<FIntPoint>* ASetPtr = PairToA.Find(Key);
+		const TSet<FIntPoint>* BSetPtr = PairToB.Find(Key);
+		if (!ASetPtr || !BSetPtr || ASetPtr->Num()==0 || BSetPtr->Num()==0) continue;
+		if (!ZoneBelowCap(Key.X) || !ZoneBelowCap(Key.Y)) continue;
+
+		// Candidate anchors on A side
+		TArray<FIntPoint> ACands;
+		ACands.Reserve(ASetPtr->Num());
+		for (const FIntPoint& c : *ASetPtr) ACands.Add(c);
+		Algo::RandomShuffle(ACands);
+
+		bool bCarved = false;
+		int32 attemptsLeft = FMath::Max(1, Settings->AttemptsPerPair);
+
+		// Try up to AttemptsPerPair different anchors
+		for (int32 attempt = 0; attempt < attemptsLeft && !bCarved; ++attempt)
+		{
+			if (ACands.Num() == 0) break;
+			const int32 pick = RNG.RandRange(0, ACands.Num()-1);
+			const FIntPoint AnchorA = ACands[pick];
+			ACands.RemoveAtSwap(pick);
+
+			// Determine boundary orientation by checking B neighbors around the anchor
+			bool bVertical=false; int dxToB=0, dyToB=0;
+			if (BSetPtr->Contains(FIntPoint(AnchorA.X+1,AnchorA.Y))) { dxToB=+1; dyToB=0; bVertical=true; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X-1,AnchorA.Y))) { dxToB=-1; dyToB=0; bVertical=true; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X,AnchorA.Y+1))) { dxToB=0; dyToB=+1; bVertical=false; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X,AnchorA.Y-1))) { dxToB=0; dyToB=-1; bVertical=false; }
+			else
+			{
+				// Fallback: pick any B cell and infer direction
+				const TSet<FIntPoint>& BSet = *BSetPtr;
+				int32 j=0, idx = RNG.RandRange(0, BSet.Num()-1);
+				FIntPoint anyB = AnchorA;
+				for (const FIntPoint& b : BSet) { if (j++==idx){ anyB=b; break; } }
+				dxToB = FMath::Clamp(anyB.X-AnchorA.X,-1,1);
+				dyToB = FMath::Clamp(anyB.Y-AnchorA.Y,-1,1);
+				bVertical = (dxToB!=0);
+			}
+
+			// Preview stripe to carve (no map modification yet)
+			TArray<FIntPoint> ToClearA, ToClearB;
+			if (!BuildCarveStripePreview(Map, AnchorA, bVertical, dxToB, dyToB,
+				Settings->PassageWidth, Key.X, Key.Y, ToClearA, ToClearB))
+			{
+				continue; // invalid anchor: would exit bounds or hit wrong zones
+			}
+
+			// Spacing check (global)
+			TArray<FIntPoint> Preview;
+			Preview.Reserve(ToClearA.Num() + ToClearB.Num());
+			Preview.Append(ToClearA); Preview.Append(ToClearB);
+			if (IsTooCloseToExistingPassages(Preview, Settings->MinPassageDistance))
+			{
+				continue; // too close to existing passages
+			}
+
+			// Carve for real
+			for (const FIntPoint& p : ToClearA) ClearCell(Map, p.X, p.Y);
+			for (const FIntPoint& p : ToClearB) ClearCell(Map, p.X, p.Y);
+
+			// Record passage
+			FZonePassage Pass; 
+			Pass.ZoneA = Key.X; Pass.ZoneB = Key.Y;
+			Pass.Cells = MoveTemp(Preview);
+			Passages.Add(MoveTemp(Pass));
+			DegreeNow[Key.X]++; DegreeNow[Key.Y]++;
+
+\t\t\t// (no zone reassignment for passage cells)
+#include "ZoneBorderGenerator.h"
+#include "DrawDebugHelpers.h"
+#include "Algo/RandomShuffle.h"
+#include "DigEmpire/Map/MapGrid2D.h"
+
+bool UZoneBorderGenerator::Generate(UMapGrid2D* MapGrid,
+                                    const TArray<int32>& ZoneLabels,
+                                    const UZoneBorderSettings* Settings)
+{
+	if (!ValidateInputs(MapGrid, ZoneLabels, Settings))
+		return false;
+
+	CachedLabels = ZoneLabels;
+	CachedSize = MapGrid->GetSize();
+	Passages.Reset();
+
+	// ZoneBorderGenerator.cpp (inside Generate)
+	TMap<FIntPoint, TSet<FIntPoint>> PairToA, PairToB;
+	CollectZoneBoundaries(CachedLabels, PairToA, PairToB);
+
+	// 1) Place walls first
+	PlaceWallsWithThickness(MapGrid, Settings, PairToA);
+
+	// 2) Then carve passages
+	ChooseAndCarvePassages(MapGrid, Settings, PairToA, PairToB);
+
+	return true;
+}
+
+TArray<FIntPoint> UZoneBorderGenerator::GetFreeCellsForZone(UMapGrid2D* MapGrid, int32 ZoneId) const
+{
+	TArray<FIntPoint> Out;
+	if (!MapGrid || CachedLabels.Num() != CachedSize.X * CachedSize.Y) return Out;
+	if (ZoneId < 0) return Out;
+
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+
+	for (int32 y = 0; y < H; ++y)
+	{
+		for (int32 x = 0; x < W; ++x)
+		{
+			const int32 id = Idx(x,y,W);
+			if (CachedLabels[id] != ZoneId) continue;
+
+			FGameplayTag Obj; int32 Durability = 0;
+			const bool bHasObj = MapGrid->GetObjectAt(x, y, Obj, Durability);
+			if (bHasObj && Obj.IsValid() && Durability > 0) continue;
+
+			Out.Add(FIntPoint(x,y));
+		}
+	}
+	return Out;
+}
+
+
+bool UZoneBorderGenerator::ValidateInputs(const UMapGrid2D* Map,
+                                          const TArray<int32>& Labels,
+                                          const UZoneBorderSettings* Settings) const
+{
+	if (!Map || !Settings) return false;
+	const FIntPoint S = Map->GetSize();
+	if (S.X <= 0 || S.Y <= 0) return false;
+	if (Labels.Num() != S.X * S.Y) return false;
+	if (!Settings->WallObjectTag.IsValid() || Settings->WallDurability <= 0) return false;
+	if (Settings->BorderThickness < 1 || Settings->PassageWidth < 1) return false;
+	return true;
+}
+
+void UZoneBorderGenerator::CollectZoneBoundaries(const TArray<int32>& Labels,
+                                                 TMap<FIntPoint, TSet<FIntPoint>>& OutPairToA,
+                                                 TMap<FIntPoint, TSet<FIntPoint>>& OutPairToB) const
+{
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+
+	auto PairKey = [](int32 A, int32 B)->FIntPoint
+	{
+		return (A < B) ? FIntPoint(A,B) : FIntPoint(B,A);
+	};
+
+	for (int32 y = 0; y < H; ++y)
+	{
+		for (int32 x = 0; x < W; ++x)
+		{
+			const int32 z = Labels[Idx(x,y,W)];
+			if (z < 0) continue;
+
+			// Right neighbor
+			if (x < W - 1)
+			{
+				const int32 z2 = Labels[Idx(x+1,y,W)];
+				if (z2 >= 0 && z2 != z)
+				{
+					const FIntPoint Key = PairKey(z, z2);
+					// Put the left cell into the lower-id side set
+					if (Key.X == z)  { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x,   y)); }
+					else             { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x+1, y)); }
+					// And mirror to B side
+					if (Key.Y == z)  { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x,   y)); }
+					else             { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x+1, y)); }
+				}
+			}
+			// Up neighbor
+			if (y < H - 1)
+			{
+				const int32 z2 = Labels[Idx(x,y+1,W)];
+				if (z2 >= 0 && z2 != z)
+				{
+					const FIntPoint Key = PairKey(z, z2);
+					if (Key.X == z)  { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x, y  )); }
+					else             { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x, y+1)); }
+					if (Key.Y == z)  { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x, y  )); }
+					else             { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x, y+1)); }
+				}
+			}
+		}
+	}
+}
+
+void UZoneBorderGenerator::ChooseAndCarvePassages(
+	UMapGrid2D* Map,
+	const UZoneBorderSettings* Settings,
+	const TMap<FIntPoint, TSet<FIntPoint>>& PairToA,
+	const TMap<FIntPoint, TSet<FIntPoint>>& PairToB)
+{
+	const int32 Seed = (Settings->RandomSeed >= 0) ? Settings->RandomSeed : FMath::Rand();
+	FRandomStream RNG(Seed);
+
+	PassageMask.Reset();
+	Passages.Reset();
+
+	// Degree caps
+	TMap<int32,int32> DegreeCap, DegreeNow;
+	TSet<int32> ZonesInvolved;
+	for (const auto& kv : PairToA) { ZonesInvolved.Add(kv.Key.X); ZonesInvolved.Add(kv.Key.Y); }
+	for (int32 z : ZonesInvolved) { DegreeNow.Add(z, 0); DegreeCap.Add(z, -1); }
+	for (const FZonePassageCap& cap : Settings->DegreeCaps)
+	{
+		DegreeCap.FindOrAdd(cap.ZoneIndex) = cap.MaxPassages;
+		if (!DegreeNow.Contains(cap.ZoneIndex)) DegreeNow.Add(cap.ZoneIndex, 0);
+	}
+	auto ZoneBelowCap = [&](int32 Z)->bool{
+		const int32 cap = DegreeCap.Contains(Z) ? DegreeCap[Z] : -1;
+		const int32 deg = DegreeNow.Contains(Z) ? DegreeNow[Z] : 0;
+		return (cap < 0) || (deg < cap);
+	};
+
+	// Randomize pair order
+	TArray<FIntPoint> Pairs; Pairs.Reserve(PairToA.Num());
+	for (const auto& kv : PairToA) Pairs.Add(kv.Key);
+	Algo::RandomShuffle(Pairs);
+
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+	auto InBounds2 = [&](int x,int y){ return x>=0 && y>=0 && x<W && y<H; };
+
+	for (const FIntPoint& Key : Pairs) // (ZoneA=min, ZoneB=max)
+	{
+		const TSet<FIntPoint>* ASetPtr = PairToA.Find(Key);
+		const TSet<FIntPoint>* BSetPtr = PairToB.Find(Key);
+		if (!ASetPtr || !BSetPtr || ASetPtr->Num()==0 || BSetPtr->Num()==0) continue;
+		if (!ZoneBelowCap(Key.X) || !ZoneBelowCap(Key.Y)) continue;
+
+		// Candidate anchors on A side
+		TArray<FIntPoint> ACands;
+		ACands.Reserve(ASetPtr->Num());
+		for (const FIntPoint& c : *ASetPtr) ACands.Add(c);
+		Algo::RandomShuffle(ACands);
+
+		bool bCarved = false;
+		int32 attemptsLeft = FMath::Max(1, Settings->AttemptsPerPair);
+
+		// Try up to AttemptsPerPair different anchors
+		for (int32 attempt = 0; attempt < attemptsLeft && !bCarved; ++attempt)
+		{
+			if (ACands.Num() == 0) break;
+			const int32 pick = RNG.RandRange(0, ACands.Num()-1);
+			const FIntPoint AnchorA = ACands[pick];
+			ACands.RemoveAtSwap(pick);
+
+			// Determine boundary orientation by checking B neighbors around the anchor
+			bool bVertical=false; int dxToB=0, dyToB=0;
+			if (BSetPtr->Contains(FIntPoint(AnchorA.X+1,AnchorA.Y))) { dxToB=+1; dyToB=0; bVertical=true; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X-1,AnchorA.Y))) { dxToB=-1; dyToB=0; bVertical=true; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X,AnchorA.Y+1))) { dxToB=0; dyToB=+1; bVertical=false; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X,AnchorA.Y-1))) { dxToB=0; dyToB=-1; bVertical=false; }
+			else
+			{
+				// Fallback: pick any B cell and infer direction
+				const TSet<FIntPoint>& BSet = *BSetPtr;
+				int32 j=0, idx = RNG.RandRange(0, BSet.Num()-1);
+				FIntPoint anyB = AnchorA;
+				for (const FIntPoint& b : BSet) { if (j++==idx){ anyB=b; break; } }
+				dxToB = FMath::Clamp(anyB.X-AnchorA.X,-1,1);
+				dyToB = FMath::Clamp(anyB.Y-AnchorA.Y,-1,1);
+				bVertical = (dxToB!=0);
+			}
+
+			// Preview stripe to carve (no map modification yet)
+			TArray<FIntPoint> ToClearA, ToClearB;
+			if (!BuildCarveStripePreview(Map, AnchorA, bVertical, dxToB, dyToB,
+				Settings->PassageWidth, Key.X, Key.Y, ToClearA, ToClearB))
+			{
+				continue; // invalid anchor: would exit bounds or hit wrong zones
+			}
+
+			// Spacing check (global)
+			TArray<FIntPoint> Preview;
+			Preview.Reserve(ToClearA.Num() + ToClearB.Num());
+			Preview.Append(ToClearA); Preview.Append(ToClearB);
+			if (IsTooCloseToExistingPassages(Preview, Settings->MinPassageDistance))
+			{
+				continue; // too close to existing passages
+			}
+
+			// Carve for real
+			for (const FIntPoint& p : ToClearA) ClearCell(Map, p.X, p.Y);
+			for (const FIntPoint& p : ToClearB) ClearCell(Map, p.X, p.Y);
+
+			// Record passage
+			FZonePassage Pass; 
+			Pass.ZoneA = Key.X; Pass.ZoneB = Key.Y;
+			Pass.Cells = MoveTemp(Preview);
+			Passages.Add(MoveTemp(Pass));
+			DegreeNow[Key.X]++; DegreeNow[Key.Y]++;
+
+			// (no zone reassignment for passage cells)
+#include "ZoneBorderGenerator.h"
+#include "DrawDebugHelpers.h"
+#include "Algo/RandomShuffle.h"
+#include "DigEmpire/Map/MapGrid2D.h"
+
+bool UZoneBorderGenerator::Generate(UMapGrid2D* MapGrid,
+                                    const TArray<int32>& ZoneLabels,
+                                    const UZoneBorderSettings* Settings)
+{
+	if (!ValidateInputs(MapGrid, ZoneLabels, Settings))
+		return false;
+
+	CachedLabels = ZoneLabels;
+	CachedSize = MapGrid->GetSize();
+	Passages.Reset();
+
+	// ZoneBorderGenerator.cpp (inside Generate)
+	TMap<FIntPoint, TSet<FIntPoint>> PairToA, PairToB;
+	CollectZoneBoundaries(CachedLabels, PairToA, PairToB);
+
+	// 1) Place walls first
+	PlaceWallsWithThickness(MapGrid, Settings, PairToA);
+
+	// 2) Then carve passages
+	ChooseAndCarvePassages(MapGrid, Settings, PairToA, PairToB);
+
+	return true;
+}
+
+TArray<FIntPoint> UZoneBorderGenerator::GetFreeCellsForZone(UMapGrid2D* MapGrid, int32 ZoneId) const
+{
+	TArray<FIntPoint> Out;
+	if (!MapGrid || CachedLabels.Num() != CachedSize.X * CachedSize.Y) return Out;
+	if (ZoneId < 0) return Out;
+
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+
+	for (int32 y = 0; y < H; ++y)
+	{
+		for (int32 x = 0; x < W; ++x)
+		{
+			const int32 id = Idx(x,y,W);
+			if (CachedLabels[id] != ZoneId) continue;
+
+			FGameplayTag Obj; int32 Durability = 0;
+			const bool bHasObj = MapGrid->GetObjectAt(x, y, Obj, Durability);
+			if (bHasObj && Obj.IsValid() && Durability > 0) continue;
+
+			Out.Add(FIntPoint(x,y));
+		}
+	}
+	return Out;
+}
+
+
+bool UZoneBorderGenerator::ValidateInputs(const UMapGrid2D* Map,
+                                          const TArray<int32>& Labels,
+                                          const UZoneBorderSettings* Settings) const
+{
+	if (!Map || !Settings) return false;
+	const FIntPoint S = Map->GetSize();
+	if (S.X <= 0 || S.Y <= 0) return false;
+	if (Labels.Num() != S.X * S.Y) return false;
+	if (!Settings->WallObjectTag.IsValid() || Settings->WallDurability <= 0) return false;
+	if (Settings->BorderThickness < 1 || Settings->PassageWidth < 1) return false;
+	return true;
+}
+
+void UZoneBorderGenerator::CollectZoneBoundaries(const TArray<int32>& Labels,
+                                                 TMap<FIntPoint, TSet<FIntPoint>>& OutPairToA,
+                                                 TMap<FIntPoint, TSet<FIntPoint>>& OutPairToB) const
+{
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+
+	auto PairKey = [](int32 A, int32 B)->FIntPoint
+	{
+		return (A < B) ? FIntPoint(A,B) : FIntPoint(B,A);
+	};
+
+	for (int32 y = 0; y < H; ++y)
+	{
+		for (int32 x = 0; x < W; ++x)
+		{
+			const int32 z = Labels[Idx(x,y,W)];
+			if (z < 0) continue;
+
+			// Right neighbor
+			if (x < W - 1)
+			{
+				const int32 z2 = Labels[Idx(x+1,y,W)];
+				if (z2 >= 0 && z2 != z)
+				{
+					const FIntPoint Key = PairKey(z, z2);
+					// Put the left cell into the lower-id side set
+					if (Key.X == z)  { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x,   y)); }
+					else             { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x+1, y)); }
+					// And mirror to B side
+					if (Key.Y == z)  { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x,   y)); }
+					else             { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x+1, y)); }
+				}
+			}
+			// Up neighbor
+			if (y < H - 1)
+			{
+				const int32 z2 = Labels[Idx(x,y+1,W)];
+				if (z2 >= 0 && z2 != z)
+				{
+					const FIntPoint Key = PairKey(z, z2);
+					if (Key.X == z)  { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x, y  )); }
+					else             { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x, y+1)); }
+					if (Key.Y == z)  { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x, y  )); }
+					else             { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x, y+1)); }
+				}
+			}
+		}
+	}
+}
+
+void UZoneBorderGenerator::ChooseAndCarvePassages(
+	UMapGrid2D* Map,
+	const UZoneBorderSettings* Settings,
+	const TMap<FIntPoint, TSet<FIntPoint>>& PairToA,
+	const TMap<FIntPoint, TSet<FIntPoint>>& PairToB)
+{
+	const int32 Seed = (Settings->RandomSeed >= 0) ? Settings->RandomSeed : FMath::Rand();
+	FRandomStream RNG(Seed);
+
+	PassageMask.Reset();
+	Passages.Reset();
+
+	// Degree caps
+	TMap<int32,int32> DegreeCap, DegreeNow;
+	TSet<int32> ZonesInvolved;
+	for (const auto& kv : PairToA) { ZonesInvolved.Add(kv.Key.X); ZonesInvolved.Add(kv.Key.Y); }
+	for (int32 z : ZonesInvolved) { DegreeNow.Add(z, 0); DegreeCap.Add(z, -1); }
+	for (const FZonePassageCap& cap : Settings->DegreeCaps)
+	{
+		DegreeCap.FindOrAdd(cap.ZoneIndex) = cap.MaxPassages;
+		if (!DegreeNow.Contains(cap.ZoneIndex)) DegreeNow.Add(cap.ZoneIndex, 0);
+	}
+	auto ZoneBelowCap = [&](int32 Z)->bool{
+		const int32 cap = DegreeCap.Contains(Z) ? DegreeCap[Z] : -1;
+		const int32 deg = DegreeNow.Contains(Z) ? DegreeNow[Z] : 0;
+		return (cap < 0) || (deg < cap);
+	};
+
+	// Randomize pair order
+	TArray<FIntPoint> Pairs; Pairs.Reserve(PairToA.Num());
+	for (const auto& kv : PairToA) Pairs.Add(kv.Key);
+	Algo::RandomShuffle(Pairs);
+
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+	auto InBounds2 = [&](int x,int y){ return x>=0 && y>=0 && x<W && y<H; };
+
+	for (const FIntPoint& Key : Pairs) // (ZoneA=min, ZoneB=max)
+	{
+		const TSet<FIntPoint>* ASetPtr = PairToA.Find(Key);
+		const TSet<FIntPoint>* BSetPtr = PairToB.Find(Key);
+		if (!ASetPtr || !BSetPtr || ASetPtr->Num()==0 || BSetPtr->Num()==0) continue;
+		if (!ZoneBelowCap(Key.X) || !ZoneBelowCap(Key.Y)) continue;
+
+		// Candidate anchors on A side
+		TArray<FIntPoint> ACands;
+		ACands.Reserve(ASetPtr->Num());
+		for (const FIntPoint& c : *ASetPtr) ACands.Add(c);
+		Algo::RandomShuffle(ACands);
+
+		bool bCarved = false;
+		int32 attemptsLeft = FMath::Max(1, Settings->AttemptsPerPair);
+
+		// Try up to AttemptsPerPair different anchors
+		for (int32 attempt = 0; attempt < attemptsLeft && !bCarved; ++attempt)
+		{
+			if (ACands.Num() == 0) break;
+			const int32 pick = RNG.RandRange(0, ACands.Num()-1);
+			const FIntPoint AnchorA = ACands[pick];
+			ACands.RemoveAtSwap(pick);
+
+			// Determine boundary orientation by checking B neighbors around the anchor
+			bool bVertical=false; int dxToB=0, dyToB=0;
+			if (BSetPtr->Contains(FIntPoint(AnchorA.X+1,AnchorA.Y))) { dxToB=+1; dyToB=0; bVertical=true; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X-1,AnchorA.Y))) { dxToB=-1; dyToB=0; bVertical=true; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X,AnchorA.Y+1))) { dxToB=0; dyToB=+1; bVertical=false; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X,AnchorA.Y-1))) { dxToB=0; dyToB=-1; bVertical=false; }
+			else
+			{
+				// Fallback: pick any B cell and infer direction
+				const TSet<FIntPoint>& BSet = *BSetPtr;
+				int32 j=0, idx = RNG.RandRange(0, BSet.Num()-1);
+				FIntPoint anyB = AnchorA;
+				for (const FIntPoint& b : BSet) { if (j++==idx){ anyB=b; break; } }
+				dxToB = FMath::Clamp(anyB.X-AnchorA.X,-1,1);
+				dyToB = FMath::Clamp(anyB.Y-AnchorA.Y,-1,1);
+				bVertical = (dxToB!=0);
+			}
+
+			// Preview stripe to carve (no map modification yet)
+			TArray<FIntPoint> ToClearA, ToClearB;
+			if (!BuildCarveStripePreview(Map, AnchorA, bVertical, dxToB, dyToB,
+				Settings->PassageWidth, Key.X, Key.Y, ToClearA, ToClearB))
+			{
+				continue; // invalid anchor: would exit bounds or hit wrong zones
+			}
+
+			// Spacing check (global)
+			TArray<FIntPoint> Preview;
+			Preview.Reserve(ToClearA.Num() + ToClearB.Num());
+			Preview.Append(ToClearA); Preview.Append(ToClearB);
+			if (IsTooCloseToExistingPassages(Preview, Settings->MinPassageDistance))
+			{
+				continue; // too close to existing passages
+			}
+
+			// Carve for real
+			for (const FIntPoint& p : ToClearA) ClearCell(Map, p.X, p.Y);
+			for (const FIntPoint& p : ToClearB) ClearCell(Map, p.X, p.Y);
+
+			// Record passage
+			FZonePassage Pass; 
+			Pass.ZoneA = Key.X; Pass.ZoneB = Key.Y;
+			Pass.Cells = MoveTemp(Preview);
+			Passages.Add(MoveTemp(Pass));
+			DegreeNow[Key.X]++; DegreeNow[Key.Y]++;
+
+\t\t\t// (no zone reassignment for passage cells)
+#include "ZoneBorderGenerator.h"
+#include "DrawDebugHelpers.h"
+#include "Algo/RandomShuffle.h"
+#include "DigEmpire/Map/MapGrid2D.h"
+
+bool UZoneBorderGenerator::Generate(UMapGrid2D* MapGrid,
+                                    const TArray<int32>& ZoneLabels,
+                                    const UZoneBorderSettings* Settings)
+{
+	if (!ValidateInputs(MapGrid, ZoneLabels, Settings))
+		return false;
+
+	CachedLabels = ZoneLabels;
+	CachedSize = MapGrid->GetSize();
+	Passages.Reset();
+
+	// ZoneBorderGenerator.cpp (inside Generate)
+	TMap<FIntPoint, TSet<FIntPoint>> PairToA, PairToB;
+	CollectZoneBoundaries(CachedLabels, PairToA, PairToB);
+
+	// 1) Place walls first
+	PlaceWallsWithThickness(MapGrid, Settings, PairToA);
+
+	// 2) Then carve passages
+	ChooseAndCarvePassages(MapGrid, Settings, PairToA, PairToB);
+
+	return true;
+}
+\t\t\t// Debug
+\t\t\tif (Settings->bDebugDrawPassages)
+\t\t\t{
+\t\t\t\tDebugDrawPassageCells(Settings, Passages.Last().Cells, FColor::MakeRandomColor(), Map->GetWorld());
+\t\t\t}
+#include "ZoneBorderGenerator.h"
+#include "DrawDebugHelpers.h"
+#include "Algo/RandomShuffle.h"
+#include "DigEmpire/Map/MapGrid2D.h"
+
+bool UZoneBorderGenerator::Generate(UMapGrid2D* MapGrid,
+                                    const TArray<int32>& ZoneLabels,
+                                    const UZoneBorderSettings* Settings)
+{
+	if (!ValidateInputs(MapGrid, ZoneLabels, Settings))
+		return false;
+
+	CachedLabels = ZoneLabels;
+	CachedSize = MapGrid->GetSize();
+	Passages.Reset();
+
+	// ZoneBorderGenerator.cpp (inside Generate)
+	TMap<FIntPoint, TSet<FIntPoint>> PairToA, PairToB;
+	CollectZoneBoundaries(CachedLabels, PairToA, PairToB);
+
+	// 1) Place walls first
+	PlaceWallsWithThickness(MapGrid, Settings, PairToA);
+
+	// 2) Then carve passages
+	ChooseAndCarvePassages(MapGrid, Settings, PairToA, PairToB);
+
+	return true;
+}
+
+TArray<FIntPoint> UZoneBorderGenerator::GetFreeCellsForZone(UMapGrid2D* MapGrid, int32 ZoneId) const
+{
+	TArray<FIntPoint> Out;
+	if (!MapGrid || CachedLabels.Num() != CachedSize.X * CachedSize.Y) return Out;
+	if (ZoneId < 0) return Out;
+
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+
+	for (int32 y = 0; y < H; ++y)
+	{
+		for (int32 x = 0; x < W; ++x)
+		{
+			const int32 id = Idx(x,y,W);
+			if (CachedLabels[id] != ZoneId) continue;
+
+			FGameplayTag Obj; int32 Durability = 0;
+			const bool bHasObj = MapGrid->GetObjectAt(x, y, Obj, Durability);
+			if (bHasObj && Obj.IsValid() && Durability > 0) continue;
+
+			Out.Add(FIntPoint(x,y));
+		}
+	}
+	return Out;
+}
+
+
+bool UZoneBorderGenerator::ValidateInputs(const UMapGrid2D* Map,
+                                          const TArray<int32>& Labels,
+                                          const UZoneBorderSettings* Settings) const
+{
+	if (!Map || !Settings) return false;
+	const FIntPoint S = Map->GetSize();
+	if (S.X <= 0 || S.Y <= 0) return false;
+	if (Labels.Num() != S.X * S.Y) return false;
+	if (!Settings->WallObjectTag.IsValid() || Settings->WallDurability <= 0) return false;
+	if (Settings->BorderThickness < 1 || Settings->PassageWidth < 1) return false;
+	return true;
+}
+
+void UZoneBorderGenerator::CollectZoneBoundaries(const TArray<int32>& Labels,
+                                                 TMap<FIntPoint, TSet<FIntPoint>>& OutPairToA,
+                                                 TMap<FIntPoint, TSet<FIntPoint>>& OutPairToB) const
+{
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+
+	auto PairKey = [](int32 A, int32 B)->FIntPoint
+	{
+		return (A < B) ? FIntPoint(A,B) : FIntPoint(B,A);
+	};
+
+	for (int32 y = 0; y < H; ++y)
+	{
+		for (int32 x = 0; x < W; ++x)
+		{
+			const int32 z = Labels[Idx(x,y,W)];
+			if (z < 0) continue;
+
+			// Right neighbor
+			if (x < W - 1)
+			{
+				const int32 z2 = Labels[Idx(x+1,y,W)];
+				if (z2 >= 0 && z2 != z)
+				{
+					const FIntPoint Key = PairKey(z, z2);
+					// Put the left cell into the lower-id side set
+					if (Key.X == z)  { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x,   y)); }
+					else             { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x+1, y)); }
+					// And mirror to B side
+					if (Key.Y == z)  { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x,   y)); }
+					else             { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x+1, y)); }
+				}
+			}
+			// Up neighbor
+			if (y < H - 1)
+			{
+				const int32 z2 = Labels[Idx(x,y+1,W)];
+				if (z2 >= 0 && z2 != z)
+				{
+					const FIntPoint Key = PairKey(z, z2);
+					if (Key.X == z)  { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x, y  )); }
+					else             { OutPairToA.FindOrAdd(Key).Add(FIntPoint(x, y+1)); }
+					if (Key.Y == z)  { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x, y  )); }
+					else             { OutPairToB.FindOrAdd(Key).Add(FIntPoint(x, y+1)); }
+				}
+			}
+		}
+	}
+}
+
+void UZoneBorderGenerator::ChooseAndCarvePassages(
+	UMapGrid2D* Map,
+	const UZoneBorderSettings* Settings,
+	const TMap<FIntPoint, TSet<FIntPoint>>& PairToA,
+	const TMap<FIntPoint, TSet<FIntPoint>>& PairToB)
+{
+	const int32 Seed = (Settings->RandomSeed >= 0) ? Settings->RandomSeed : FMath::Rand();
+	FRandomStream RNG(Seed);
+
+	PassageMask.Reset();
+	Passages.Reset();
+
+	// Degree caps
+	TMap<int32,int32> DegreeCap, DegreeNow;
+	TSet<int32> ZonesInvolved;
+	for (const auto& kv : PairToA) { ZonesInvolved.Add(kv.Key.X); ZonesInvolved.Add(kv.Key.Y); }
+	for (int32 z : ZonesInvolved) { DegreeNow.Add(z, 0); DegreeCap.Add(z, -1); }
+	for (const FZonePassageCap& cap : Settings->DegreeCaps)
+	{
+		DegreeCap.FindOrAdd(cap.ZoneIndex) = cap.MaxPassages;
+		if (!DegreeNow.Contains(cap.ZoneIndex)) DegreeNow.Add(cap.ZoneIndex, 0);
+	}
+	auto ZoneBelowCap = [&](int32 Z)->bool{
+		const int32 cap = DegreeCap.Contains(Z) ? DegreeCap[Z] : -1;
+		const int32 deg = DegreeNow.Contains(Z) ? DegreeNow[Z] : 0;
+		return (cap < 0) || (deg < cap);
+	};
+
+	// Randomize pair order
+	TArray<FIntPoint> Pairs; Pairs.Reserve(PairToA.Num());
+	for (const auto& kv : PairToA) Pairs.Add(kv.Key);
+	Algo::RandomShuffle(Pairs);
+
+	const int32 W = CachedSize.X, H = CachedSize.Y;
+	auto InBounds2 = [&](int x,int y){ return x>=0 && y>=0 && x<W && y<H; };
+
+	for (const FIntPoint& Key : Pairs) // (ZoneA=min, ZoneB=max)
+	{
+		const TSet<FIntPoint>* ASetPtr = PairToA.Find(Key);
+		const TSet<FIntPoint>* BSetPtr = PairToB.Find(Key);
+		if (!ASetPtr || !BSetPtr || ASetPtr->Num()==0 || BSetPtr->Num()==0) continue;
+		if (!ZoneBelowCap(Key.X) || !ZoneBelowCap(Key.Y)) continue;
+
+		// Candidate anchors on A side
+		TArray<FIntPoint> ACands;
+		ACands.Reserve(ASetPtr->Num());
+		for (const FIntPoint& c : *ASetPtr) ACands.Add(c);
+		Algo::RandomShuffle(ACands);
+
+		bool bCarved = false;
+		int32 attemptsLeft = FMath::Max(1, Settings->AttemptsPerPair);
+
+		// Try up to AttemptsPerPair different anchors
+		for (int32 attempt = 0; attempt < attemptsLeft && !bCarved; ++attempt)
+		{
+			if (ACands.Num() == 0) break;
+			const int32 pick = RNG.RandRange(0, ACands.Num()-1);
+			const FIntPoint AnchorA = ACands[pick];
+			ACands.RemoveAtSwap(pick);
+
+			// Determine boundary orientation by checking B neighbors around the anchor
+			bool bVertical=false; int dxToB=0, dyToB=0;
+			if (BSetPtr->Contains(FIntPoint(AnchorA.X+1,AnchorA.Y))) { dxToB=+1; dyToB=0; bVertical=true; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X-1,AnchorA.Y))) { dxToB=-1; dyToB=0; bVertical=true; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X,AnchorA.Y+1))) { dxToB=0; dyToB=+1; bVertical=false; }
+			else if (BSetPtr->Contains(FIntPoint(AnchorA.X,AnchorA.Y-1))) { dxToB=0; dyToB=-1; bVertical=false; }
+			else
+			{
+				// Fallback: pick any B cell and infer direction
+				const TSet<FIntPoint>& BSet = *BSetPtr;
+				int32 j=0, idx = RNG.RandRange(0, BSet.Num()-1);
+				FIntPoint anyB = AnchorA;
+				for (const FIntPoint& b : BSet) { if (j++==idx){ anyB=b; break; } }
+				dxToB = FMath::Clamp(anyB.X-AnchorA.X,-1,1);
+				dyToB = FMath::Clamp(anyB.Y-AnchorA.Y,-1,1);
+				bVertical = (dxToB!=0);
+			}
+
+			// Preview stripe to carve (no map modification yet)
+			TArray<FIntPoint> ToClearA, ToClearB;
+			if (!BuildCarveStripePreview(Map, AnchorA, bVertical, dxToB, dyToB,
+				Settings->PassageWidth, Key.X, Key.Y, ToClearA, ToClearB))
+			{
+				continue; // invalid anchor: would exit bounds or hit wrong zones
+			}
+
+			// Spacing check (global)
+			TArray<FIntPoint> Preview;
+			Preview.Reserve(ToClearA.Num() + ToClearB.Num());
+			Preview.Append(ToClearA); Preview.Append(ToClearB);
+			if (IsTooCloseToExistingPassages(Preview, Settings->MinPassageDistance))
+			{
+				continue; // too close to existing passages
+			}
+
+			// Carve for real
+			for (const FIntPoint& p : ToClearA) ClearCell(Map, p.X, p.Y);
+			for (const FIntPoint& p : ToClearB) ClearCell(Map, p.X, p.Y);
+
+			// Record passage
+			FZonePassage Pass; 
+			Pass.ZoneA = Key.X; Pass.ZoneB = Key.Y;
+			Pass.Cells = MoveTemp(Preview);
+			Passages.Add(MoveTemp(Pass));
+			DegreeNow[Key.X]++; DegreeNow[Key.Y]++;
+
+\t\t\t// (no zone reassignment for passage cells)
+#include "ZoneBorderGenerator.h"
 #include "DrawDebugHelpers.h"
 #include "Algo/RandomShuffle.h"
 #include "DigEmpire/Map/MapGrid2D.h"
@@ -484,7 +3124,7 @@ bool UZoneBorderGenerator::BuildCarveStripePreview(
 					++step;
 					continue;
 				}
-				// First EMPTY A-cell reached → remember for leakage check and stop this column on A side
+				// First EMPTY A-cell reached ? remember for leakage check and stop this column on A side
 				TerminalEmptyA.Add(p);
 				bStopped = true;
 				break;
@@ -510,7 +3150,7 @@ bool UZoneBorderGenerator::BuildCarveStripePreview(
 					++step;
 					continue;
 				}
-				// First EMPTY B-cell reached → remember for leakage check and stop this column on B side
+				// First EMPTY B-cell reached ? remember for leakage check and stop this column on B side
 				TerminalEmptyB.Add(p);
 				bStopped = true;
 				break;
@@ -540,7 +3180,7 @@ bool UZoneBorderGenerator::BuildCarveStripePreview(
 			const int lab = CachedLabels[Idx(q.X, q.Y, W)];
 			if (lab != ZoneA && lab != ZoneB)
 			{
-				// Adjacent empty opens directly into a third zone → bad passage
+				// Adjacent empty opens directly into a third zone ? bad passage
 				return true;
 			}
 		}
@@ -555,6 +3195,7 @@ bool UZoneBorderGenerator::BuildCarveStripePreview(
 
 	return true;
 }
+
 
 
 
