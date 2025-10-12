@@ -251,10 +251,23 @@ void UZoneBorderGenerator::ChooseAndCarvePassages(
 			DilateMask(PassageMask, FMath::Max(0, Settings->BorderThickness - 1)); // shield from thick borders
 			DilateMask(PassageMask, Settings->MinPassageDistance);                  // spacing for future passages
 
-			// Debug
+			// Debug: color by zone so ends differ
 			if (Settings->bDebugDrawPassages)
 			{
-				DebugDrawPassageCells(Settings, Passages.Last().Cells, FColor::MakeRandomColor(), Map->GetWorld());
+				TArray<FIntPoint> CellsA; CellsA.Reserve(Passages.Last().Cells.Num());
+				TArray<FIntPoint> CellsB; CellsB.Reserve(Passages.Last().Cells.Num());
+				for (const FIntPoint& c : Passages.Last().Cells)
+				{
+					const int32 id = Idx(c.X, c.Y, CachedSize.X);
+					if (id >= 0 && id < CachedLabels.Num())
+					{
+						const int32 z = CachedLabels[id];
+						if (z == Key.X) CellsA.Add(c);
+						else if (z == Key.Y) CellsB.Add(c);
+					}
+				}
+				if (CellsA.Num() > 0) DebugDrawPassageCells(Settings, CellsA, FColor::Red, Map->GetWorld());
+				if (CellsB.Num() > 0) DebugDrawPassageCells(Settings, CellsB, FColor::Blue, Map->GetWorld());
 			}
 
 			bCarved = true;
