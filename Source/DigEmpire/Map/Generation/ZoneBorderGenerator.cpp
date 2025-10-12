@@ -2992,24 +2992,7 @@ void UZoneBorderGenerator::DebugDrawPassageCells(const UZoneBorderSettings* Sett
     for (const FIntPoint& c : Cells)
     {
         const FVector P(c.X * Settings->DebugTileSizeUU, c.Y * Settings->DebugTileSizeUU, Settings->DebugZOffset);
-
-        // Choose color based on the zone id at this cell (fallback to provided Color)
-        FColor UseColor = Color;
-        const int32 W = CachedSize.X;
-        const int32 H = CachedSize.Y;
-        if (W > 0 && H > 0 && CachedLabels.Num() == W * H && c.X >= 0 && c.Y >= 0 && c.X < W && c.Y < H)
-        {
-            const int32 id = Idx(c.X, c.Y, W);
-            const int32 ZoneId = CachedLabels.IsValidIndex(id) ? CachedLabels[id] : -1;
-            if (ZoneId >= 0)
-            {
-                const uint8 H8 = uint8((ZoneId * 47) & 0xFF); // deterministic per-zone hue
-                const FLinearColor Lin = FLinearColor::MakeFromHSV8(H8, 220, 255);
-                UseColor = Lin.ToFColor(true);
-            }
-        }
-
-        DrawDebugSphere(World, P, Settings->DebugSphereRadiusUU, 12, UseColor, Settings->DebugLifetime <= 0.f, Settings->DebugLifetime);
+        DrawDebugSphere(World, P, Settings->DebugSphereRadiusUU, 12, Color, Settings->DebugLifetime <= 0.f, Settings->DebugLifetime);
     }
 }
 void UZoneBorderGenerator::DilateMask(TSet<FIntPoint>& InOutMask, int32 Radius) const
