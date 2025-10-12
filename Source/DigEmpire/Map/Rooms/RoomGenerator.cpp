@@ -88,7 +88,7 @@ bool URoomGenerator::TryPlaceRoomInZone(UMapGrid2D* Map,
             // Ensure a 1-cell free corridor around the room: all outside-neighboring cells must be in-bounds and empty.
             if (!(x0 > 0 && y0 > 0 && (x0 + RoomW) < W && (y0 + RoomH) < H))
             {
-                continue; // no clearance at map edge
+                return false; // no clearance at map edge
             }
 
             auto IsFree = [&](int32 cx, int32 cy)->bool
@@ -116,7 +116,7 @@ bool URoomGenerator::TryPlaceRoomInZone(UMapGrid2D* Map,
                 if (!Map->IsInBounds(xOutMax, y) || !IsFree(xOutMax, y)) { bClearRing = false; break; }
             }
 
-            if (!bClearRing) continue;
+            if (!bClearRing) return false;
 
             // Choose a single entrance on the room border such that outside cell is not a wall/object.
             int32 entranceX = -1, entranceY = -1;
@@ -153,7 +153,7 @@ bool URoomGenerator::TryPlaceRoomInZone(UMapGrid2D* Map,
             }
 
             // If no valid entrance found, skip this placement.
-            if (entranceX < 0) continue;
+            if (entranceX < 0) return false;
 
             // Build walls along the rectangle border, skipping the entrance cell.
             const FGameplayTag WallTag = BorderSettings->WallObjectTag;
