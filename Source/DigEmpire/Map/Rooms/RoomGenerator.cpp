@@ -1,6 +1,7 @@
 #include "RoomGenerator.h"
 #include "DigEmpire/Map/MapGrid2D.h"
 #include "RoomTypes.h"
+#include "DigEmpire/Map/Generation/ZoneBorderSettings.h"
 
 bool URoomGenerator::Generate(UMapGrid2D* MapGrid,
                               const TArray<int32>& ZoneLabels,
@@ -43,30 +44,6 @@ bool URoomGenerator::Generate(UMapGrid2D* MapGrid,
         if (TryPlaceRoomInZone(MapGrid, Size, TargetZone, Spec.Width, Spec.Height, ZoneLabels, BorderSettings, MaxAttempts, RNG))
         {
             bAnyPlaced = true;
-        }
-    }
-
-    // Ensure walls along the outer map border as part of room border building.
-    if (bAnyPlaced && BorderSettings)
-    {
-        const FIntPoint S = MapGrid->GetSize();
-        const int32 W = S.X, H = S.Y;
-        if (W > 0 && H > 0)
-        {
-            const FGameplayTag WallTag = BorderSettings->WallObjectTag;
-            const int32 WallHP = BorderSettings->WallDurability;
-            // Top and bottom rows
-            for (int32 x = 0; x < W; ++x)
-            {
-                MapGrid->AddOrUpdateObjectAt(x, 0, WallTag, WallHP);
-                MapGrid->AddOrUpdateObjectAt(x, H - 1, WallTag, WallHP);
-            }
-            // Left and right columns
-            for (int32 y = 0; y < H; ++y)
-            {
-                MapGrid->AddOrUpdateObjectAt(0, y, WallTag, WallHP);
-                MapGrid->AddOrUpdateObjectAt(W - 1, y, WallTag, WallHP);
-            }
         }
     }
 

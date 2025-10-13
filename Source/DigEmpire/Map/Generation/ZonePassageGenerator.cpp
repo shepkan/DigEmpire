@@ -341,6 +341,18 @@ bool UZonePassageGenerator::BuildCarveStripePreview(
         const FIntPoint n2(e.X - Tangent.X, e.Y - Tangent.Y);
         if (InBounds2(n1.X,n1.Y) && CachedLabels[Idx(n1.X,n1.Y,W)] == ZoneA) return false;
         if (InBounds2(n2.X,n2.Y) && CachedLabels[Idx(n2.X,n2.Y,W)] == ZoneA) return false;
+
+        // Additional requirement: terminal empty B cell must have at least
+        // one adjacent empty cell within ZoneB to ensure it opens into space.
+        bool bHasEmptyNeighborInB = false;
+        const FIntPoint N4[4] = { {e.X+1,e.Y},{e.X-1,e.Y},{e.X,e.Y+1},{e.X,e.Y-1} };
+        for (const FIntPoint& n : N4)
+        {
+            if (!InBounds2(n.X, n.Y)) continue;
+            if (CachedLabels[Idx(n.X,n.Y,W)] != ZoneB) continue;
+            if (IsEmpty(n.X, n.Y)) { bHasEmptyNeighborInB = true; break; }
+        }
+        if (!bHasEmptyNeighborInB) return false;
     }
 
     return true;
