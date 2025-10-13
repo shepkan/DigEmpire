@@ -254,6 +254,27 @@ void UZoneConnectivityFixer::BuildMasksForZone(UMapGrid2D* Map,
         // Entrance: mark as non-traversable in connectivity (do not go through door)
         RoomWalls.Add(R.Entrance);
         RoomInterior.Add(R.Entrance);
+
+        // Force-free the cell directly outside the entrance within the same zone.
+        // This guarantees the room has an exit into traversable space.
+        FIntPoint Outside = R.Entrance;
+        if (R.Entrance.Y == y0)            { Outside.Y -= 1; }           // entrance on top edge -> outside north
+        else if (R.Entrance.Y == y0 + h - 1) { Outside.Y += 1; }         // bottom edge -> outside south
+        else if (R.Entrance.X == x0)       { Outside.X -= 1; }           // left edge -> outside west
+        else if (R.Entrance.X == x0 + w - 1) { Outside.X += 1; }         // right edge -> outside east
+
+        if (Map->IsInBounds(Outside.X, Outside.Y))
+        {
+            const int oid = Idx(Outside.X, Outside.Y, W);
+            if (Labels.IsValidIndex(oid) && Labels[oid] == ZoneId)
+            {
+                FGameplayTag ObjTag; int32 ObjDur = 0;
+                if (Map->GetObjectAt(Outside.X, Outside.Y, ObjTag, ObjDur))
+                {
+                    Map->RemoveObjectAt(Outside.X, Outside.Y);
+                }
+            }
+        }
     }
 
     // Passages: OPEN (targets to reach); do not modify openness here

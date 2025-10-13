@@ -3,7 +3,7 @@
 #include "CoreMinimal.h"
 #include "UObject/Object.h"
 #include "GameplayTagContainer.h"
-#include "Generation/ZoneBorderGenerator.h" // FZonePassage
+#include "Generation/ZonePassageTypes.h" // FZonePassage
 #include "Rooms/RoomTypes.h"                // FRoomInfo
 #include "MapGrid2D.generated.h"
 

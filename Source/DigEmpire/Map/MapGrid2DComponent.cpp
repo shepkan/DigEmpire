@@ -4,6 +4,7 @@
 #include "DigEmpire/BusEvents/MapGrid2DMessages.h"
 #include "GameFramework/GameplayMessageSubsystem.h"
 #include "Generation/ZoneBorderGenerator.h"
+#include "Generation/ZonePassageGenerator.h"
 #include "Zones/MapZoneGenerator.h"
 #include "Zones/ZoneGenSettings.h"
 #include "Rooms/RoomGenerator.h"
@@ -84,13 +85,16 @@ void UMapGrid2DComponent::InitializeAndBuild()
 	{
 		// Persist zone labels into the map cells
 		MapInstance->ApplyZoneLabels(ZoneLabels);
-		UZoneBorderGenerator* BorderGen = NewObject<UZoneBorderGenerator>();
-
-		if (BorderGen->Generate(MapInstance, ZoneLabels, BorderSettings))
-		{
-			// Store passages on the map for later queries
-			MapInstance->SetPassages(BorderGen->GetPassages());
-		}
+        UZoneBorderGenerator* BorderGen = NewObject<UZoneBorderGenerator>();
+        if (BorderGen->Generate(MapInstance, ZoneLabels, BorderSettings))
+        {
+            // After walls, carve passages and store them on the map
+            UZonePassageGenerator* PassageGen = NewObject<UZonePassageGenerator>();
+            if (PassageGen->Generate(MapInstance, ZoneLabels, BorderSettings))
+            {
+                MapInstance->SetPassages(PassageGen->GetPassages());
+            }
+        }
 
 		// Optional: place rooms inside zones using RoomSettings
 		if (RoomSettings)
