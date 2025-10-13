@@ -17,6 +17,27 @@ bool UZoneBorderGenerator::Generate(UMapGrid2D* MapGrid,
 
     // Place walls along boundaries with configured thickness
     PlaceWallsWithThickness(MapGrid, Settings, PairToA);
+
+    // Also place walls along the outer border of the map
+    {
+        const FIntPoint S = CachedSize;
+        const int32 W = S.X, H = S.Y;
+        if (W > 0 && H > 0)
+        {
+            // Top and bottom rows
+            for (int32 x = 0; x < W; ++x)
+            {
+                PutWall(MapGrid, x, 0, Settings);
+                PutWall(MapGrid, x, H - 1, Settings);
+            }
+            // Left and right columns
+            for (int32 y = 0; y < H; ++y)
+            {
+                PutWall(MapGrid, 0, y, Settings);
+                PutWall(MapGrid, W - 1, y, Settings);
+            }
+        }
+    }
     return true;
 }
 
@@ -156,4 +177,3 @@ void UZoneBorderGenerator::PutWall(UMapGrid2D* Map, int32 X, int32 Y, const UZon
 {
     Map->AddOrUpdateObjectAt(X, Y, Settings->WallObjectTag, Settings->WallDurability);
 }
-
