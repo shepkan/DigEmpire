@@ -24,13 +24,7 @@ AMapSpriteRenderer::AMapSpriteRenderer()
 void AMapSpriteRenderer::BeginPlay()
 {
     Super::BeginPlay();
-
-    // Ensure root is Static at runtime as well (for already-placed actors)
-    if (USceneComponent* Root = GetRootComponent())
-    {
-        Root->SetMobility(EComponentMobility::Static);
-    }
-
+	
     // Try to auto-pick a map component if none assigned
     TryAutoFindMapComponent();
 
