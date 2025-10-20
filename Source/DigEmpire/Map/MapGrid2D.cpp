@@ -14,6 +14,7 @@ void UMapGrid2D::Initialize(int32 InSizeX, int32 InSizeY)
         Cell.BackgroundTag = FGameplayTag(); // empty
         Cell.ObjectTag = FGameplayTag();     // empty
         Cell.ObjectDurability = 0;
+        Cell.bVieved = false;
         // ZoneId defaults from struct initializer
     }
 }
@@ -79,6 +80,13 @@ bool UMapGrid2D::GetCell(int32 X, int32 Y, FMapCell& OutCell) const
 {
     if (!IsInBounds(X, Y)) return false;
     OutCell = Cells[Index(X, Y)];
+    return true;
+}
+
+bool UMapGrid2D::SetViewedAt(int32 X, int32 Y, bool bViewed)
+{
+    if (!IsInBounds(X, Y)) return false;
+    Cells[Index(X, Y)].bVieved = bViewed;
     return true;
 }
 

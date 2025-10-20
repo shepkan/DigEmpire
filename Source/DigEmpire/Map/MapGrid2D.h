@@ -34,6 +34,10 @@ struct FMapCell
     /** Zone id this cell belongs to (>=0) or -1 if unset */
     UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category="Cell")
     int32 ZoneId = -1;
+
+    /** Has this cell been seen (via vision)? */
+    UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category="Cell")
+    bool bVieved = false;
 };
 
 /**
@@ -77,6 +81,10 @@ public:
 	/** Fast access to a whole cell (false if out of bounds) */
     UFUNCTION(BlueprintPure, Category="MapGrid")
     bool GetCell(int32 X, int32 Y, FMapCell& OutCell) const;
+
+    /** Mark or clear the viewed flag for a cell */
+    UFUNCTION(BlueprintCallable, Category="MapGrid")
+    bool SetViewedAt(int32 X, int32 Y, bool bViewed);
 
     // Zones API
     UFUNCTION(BlueprintCallable, Category="MapGrid|Zones")
