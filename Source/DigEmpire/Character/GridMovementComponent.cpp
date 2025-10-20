@@ -162,10 +162,9 @@ bool UGridMovementComponent::IsWorldPositionValid(const FVector& WorldPos) const
 	// Circle center in grid space
 	const FVector2D G = WorldToGridFloat(WorldPos);
 
-	// Check all cells whose centers lie within R + 0.5 around G (fast conservative test).
-	const float R = CollisionRadiusCells;           // in cells
-	const float Limit = R + 0.5f;                   // center-to-center threshold
-	const float LimitSq = Limit * Limit;
+    // Check all cells whose centers lie within R + 0.5 around G (candidate set).
+    const float R = CollisionRadiusCells;           // in cells (circle radius)
+    const float Limit = R + 0.5f;                   // candidate radius (cell center to circle center)
 
 	const int32 MinX = FMath::FloorToInt(FMath::FloorToFloat(G.X - Limit));
 	const int32 MaxX = FMath::CeilToInt (FMath::CeilToFloat (G.X + Limit));
@@ -178,18 +177,25 @@ bool UGridMovementComponent::IsWorldPositionValid(const FVector& WorldPos) const
 		{
 			if (!InBounds(x, y)) continue;
 
-			// Center-to-center distance in cells
-			const float dx = static_cast<float>(x) - G.X;
-			const float dy = static_cast<float>(y) - G.Y;
-			const float d2 = dx*dx + dy*dy;
+            if (IsCellBlocked(x, y))
+            {
+                // Precise circle (center=G, radius=R) vs. axis-aligned cell square [x-0.5,x+0.5]x[y-0.5,y+0.5]
+                const float minX = static_cast<float>(x) - 0.5f;
+                const float maxX = static_cast<float>(x) + 0.5f;
+                const float minY = static_cast<float>(y) - 0.5f;
+                const float maxY = static_cast<float>(y) + 0.5f;
 
-			if (d2 <= LimitSq)
-			{
-				if (IsCellBlocked(x, y))
-				{
-					return false;
-				}
-			}
+                const float cx = FMath::Clamp(G.X, minX, maxX);
+                const float cy = FMath::Clamp(G.Y, minY, maxY);
+                const float dx = G.X - cx;
+                const float dy = G.Y - cy;
+                const float dist2 = dx*dx + dy*dy;
+
+                if (dist2 <= R*R)
+                {
+                    return false;
+                }
+            }
 		}
 	}
 	return true;
