@@ -3,6 +3,8 @@
 #include "EngineUtils.h"
 #include "GameplayTagContainer.h"
 #include "DigEmpire/Map/MapGrid2DComponent.h"
+#include "DigEmpire/BusEvents/MapGrid2DMessages.h"
+#include "GameFramework/GameplayMessageSubsystem.h"
 
 UGridMovementComponent::UGridMovementComponent()
 {
@@ -12,8 +14,24 @@ UGridMovementComponent::UGridMovementComponent()
 
 void UGridMovementComponent::BeginPlay()
 {
-	Super::BeginPlay();
-	if (!MapComponent) { TryAutoFindMap(); }
+    Super::BeginPlay();
+    if (!MapComponent) { TryAutoFindMap(); }
+    SetupMapReadySubscription();
+    if (MapComponent && MapComponent->IsMapReady())
+    {
+        MoveToFirstFreeCell();
+    }
+}
+
+// Unsubscribe on EndPlay to avoid stale listeners
+void UGridMovementComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    if (MapReadyHandle.IsValid())
+    {
+        UGameplayMessageSubsystem::Get(this).UnregisterListener(MapReadyHandle);
+        MapReadyHandle = FGameplayMessageListenerHandle();
+    }
+    Super::EndPlay(EndPlayReason);
 }
 
 void UGridMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -194,9 +212,9 @@ bool UGridMovementComponent::InBounds(int32 GX, int32 GY) const
 
 void UGridMovementComponent::TryAutoFindMap()
 {
-	if (MapComponent) return;
-	if (UWorld* World = GetWorld())
-	{
+    if (MapComponent) return;
+    if (UWorld* World = GetWorld())
+    {
 		for (TActorIterator<AActor> It(World); It; ++It)
 		{
 			if (UMapGrid2DComponent* Comp = It->FindComponentByClass<UMapGrid2DComponent>())
@@ -204,6 +222,75 @@ void UGridMovementComponent::TryAutoFindMap()
 				MapComponent = Comp;
 				return;
 			}
-		}
-	}
+        }
+    }
 }
+
+void UGridMovementComponent::SetupMapReadySubscription()
+{
+    if (MapReadyHandle.IsValid())
+    {
+        UGameplayMessageSubsystem::Get(this).UnregisterListener(MapReadyHandle);
+        MapReadyHandle = FGameplayMessageListenerHandle();
+    }
+
+    if (!MapComponent)
+    {
+        return;
+    }
+
+    const FGameplayTag Channel = MapComponent->MapReadyChannel;
+    if (!Channel.IsValid())
+    {
+        return;
+    }
+
+    UGameplayMessageSubsystem& Bus = UGameplayMessageSubsystem::Get(this);
+    MapReadyHandle = Bus.RegisterListener<FMapReadyMessage>(
+        Channel,
+        [this](FGameplayTag /*Tag*/, const FMapReadyMessage& Msg)
+        {
+            OnMapReadyMessage(Msg);
+        });
+}
+
+void UGridMovementComponent::OnMapReadyMessage(const FMapReadyMessage& Msg)
+{
+    if (!Msg.Source)
+    {
+        return;
+    }
+
+    if (!MapComponent)
+    {
+        MapComponent = Msg.Source;
+    }
+
+    if (MapComponent == Msg.Source)
+    {
+        MoveToFirstFreeCell();
+    }
+}
+
+void UGridMovementComponent::MoveToFirstFreeCell()
+{
+    if (!UpdatedComponent || !MapComponent || !MapComponent->IsMapReady())
+    {
+        return;
+    }
+
+    const FIntPoint Size = MapComponent->GetSize();
+    for (int32 y = 0; y < Size.Y; ++y)
+    {
+        for (int32 x = 0; x < Size.X; ++x)
+        {
+            if (!IsCellBlocked(x, y))
+            {
+                const FVector TargetWorld = GridFloatToWorld(FVector2D(static_cast<float>(x), static_cast<float>(y)));
+                UpdatedComponent->SetWorldLocation(TargetWorld, false, nullptr, ETeleportType::TeleportPhysics);
+                return;
+            }
+        }
+    }
+}
+

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/PawnMovementComponent.h"
+#include "GameFramework/GameplayMessageSubsystem.h"
 #include "GridMovementComponent.generated.h"
 
 class UMapGrid2DComponent;
@@ -16,7 +17,7 @@ class UMapGrid2DComponent;
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
 class UGridMovementComponent : public UPawnMovementComponent
 {
-	GENERATED_BODY()
+    GENERATED_BODY()
 
 public:
 	UGridMovementComponent();
@@ -62,12 +63,13 @@ public:
 	FVector GridFloatToWorld(const FVector2D& Grid) const;
 
 protected:
-	virtual void BeginPlay() override;
-	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+    virtual void BeginPlay() override;
+    virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
-	/** Attempt to move by Delta (XY). Performs grid collision test and sliding. */
-	void TryMoveWithGridCollision(const FVector& Delta);
+    /** Attempt to move by Delta (XY). Performs grid collision test and sliding. */
+    void TryMoveWithGridCollision(const FVector& Delta);
 
 	/** Returns true if circle at WorldPos is NOT overlapping any occupied cell. */
 	bool IsWorldPositionValid(const FVector& WorldPos) const;
@@ -78,9 +80,21 @@ private:
 	/** Axis-wise test helper used for sliding. */
 	bool TryAxisMove(const FVector& FullDelta, bool bMoveX, bool bMoveY);
 
-	/** Bounds check against map. */
-	bool InBounds(int32 GX, int32 GY) const;
+    /** Bounds check against map. */
+    bool InBounds(int32 GX, int32 GY) const;
 
-	/** Best-effort auto-find of a UMapGrid2DComponent in the world. */
-	void TryAutoFindMap();
+    /** Best-effort auto-find of a UMapGrid2DComponent in the world. */
+    void TryAutoFindMap();
+
+    /** Subscribe to map-ready event bus and handle immediate readiness. */
+    void SetupMapReadySubscription();
+
+    /** Callback for Event Bus payload. */
+    void OnMapReadyMessage(const struct FMapReadyMessage& Msg);
+
+    /** Move UpdatedComponent to the first free grid cell (preserving Z). */
+    void MoveToFirstFreeCell();
+
+    /** Listener handle for Gameplay Message Subsystem. */
+    FGameplayMessageListenerHandle MapReadyHandle;
 };
