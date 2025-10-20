@@ -126,7 +126,7 @@ bool UMapZoneGenerator::Generate(UMapGrid2D* MapGrid,
 		// Random pop
 		const int32 idxPop = RNG.RandRange(0, Frontier.Num() - 1);
 		const FFrontierEntry C = Frontier[idxPop];
-		Frontier.RemoveAtSwap(idxPop, 1, /*bAllowShrinking=*/false);
+		Frontier.RemoveAtSwap(idxPop, 1, EAllowShrinking::No);
 
 		// Already taken?
 		const int32 cid = Idx(C.X, C.Y, W);

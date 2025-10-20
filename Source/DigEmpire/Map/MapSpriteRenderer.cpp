@@ -9,6 +9,7 @@
 #include "MapGrid2D.h"
 
 #include "DigEmpire/BusEvents/MapGrid2DMessages.h"
+#include "DigEmpire/BusEvents/CharacterGridVisionMessages.h"
 
 AMapSpriteRenderer::AMapSpriteRenderer()
 {
@@ -25,24 +26,21 @@ void AMapSpriteRenderer::BeginPlay()
 {
     Super::BeginPlay();
 	
-    // Try to auto-pick a map component if none assigned
+    // Try to auto-pick a map component if none assigned (optional for event-driven)
     TryAutoFindMapComponent();
 
-	// Subscribe to map-ready messages + do one-shot check if already ready
-	SetupMapReadySubscription();
-
-	// If map already ready at BeginPlay, attempt immediate rebuild
-	RebuildNow();
+    // Subscribe to first-seen cell messages
+    SetupFirstSeenSubscription();
 }
 
 void AMapSpriteRenderer::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	// Unregister listener if it was registered
-	if (MapReadyHandle.IsValid())
-	{
-		UGameplayMessageSubsystem::Get(this).UnregisterListener(MapReadyHandle);
-	}
-	Super::EndPlay(EndPlayReason);
+    // Unregister listener if it was registered
+    if (FirstSeenHandle.IsValid())
+    {
+        UGameplayMessageSubsystem::Get(this).UnregisterListener(FirstSeenHandle);
+    }
+    Super::EndPlay(EndPlayReason);
 }
 
 void AMapSpriteRenderer::TryAutoFindMapComponent()
@@ -60,62 +58,64 @@ void AMapSpriteRenderer::TryAutoFindMapComponent()
 	}
 }
 
-void AMapSpriteRenderer::SetupMapReadySubscription()
+void AMapSpriteRenderer::SetupFirstSeenSubscription()
 {
-	if (!MapReadyChannel.IsValid())
-	{
-		// No channel configured — just rely on direct readiness checks.
-		return;
-	}
+    if (!FirstSeenChannel.IsValid())
+    {
+        return;
+    }
 
-	UGameplayMessageSubsystem& Bus = UGameplayMessageSubsystem::Get(this);
-	
-	MapReadyHandle = Bus.RegisterListener<FMapReadyMessage>(
-		MapReadyChannel,
-		[this](FGameplayTag SomeTag,const FMapReadyMessage& Msg)
-		{
-			OnMapReadyMessage(Msg);
-		});
+    UGameplayMessageSubsystem& Bus = UGameplayMessageSubsystem::Get(this);
+    FirstSeenHandle = Bus.RegisterListener<FCellsFirstSeenMessage>(
+        FirstSeenChannel,
+        [this](FGameplayTag, const FCellsFirstSeenMessage& Msg)
+        {
+            OnCellsFirstSeen(Msg);
+        });
 }
 
-void AMapSpriteRenderer::OnMapReadyMessage(const FMapReadyMessage& Msg)
+void AMapSpriteRenderer::OnCellsFirstSeen(const FCellsFirstSeenMessage& Msg)
 {
-	// Accept only messages with a valid source; if our MapSource is unset, adopt it.
-	if (Msg.Source)
-	{
-		if (!MapSource)
-		{
-			MapSource = Msg.Source;
-		}
-		// If message pertains to our current source, rebuild
-		if (MapSource == Msg.Source)
-		{
-			RebuildNow();
-		}
-	}
-}
+    if (!TextureSet) return;
 
-void AMapSpriteRenderer::RebuildNow()
-{
-	// If map exists and is ready, rebuild. Otherwise do nothing.
-	if (MapSource && MapSource->IsMapReady())
-	{
-		RebuildInternal();
-	}
+    // For each newly seen cell, render background and object layers
+    for (const FGridCellWithCoord& Entry : Msg.Cells)
+    {
+        const int32 X = Entry.Coord.X;
+        const int32 Y = Entry.Coord.Y;
+
+        if (UTexture2D* BgTex = TextureSet->FindBackgroundTexture(Entry.Cell.BackgroundTag))
+        {
+            if (auto* HISM = GetOrCreateHISMForTexture(BgTex))
+            {
+                HISM->AddInstance(BuildInstanceTransform(X, Y, BackgroundLayer));
+            }
+        }
+
+        if (Entry.Cell.HasObject())
+        {
+            if (UTexture2D* ObjTex = TextureSet->FindObjectTexture(Entry.Cell.ObjectTag))
+            {
+                if (auto* HISM = GetOrCreateHISMForTexture(ObjTex))
+                {
+                    HISM->AddInstance(BuildInstanceTransform(X, Y, ObjectLayer));
+                }
+            }
+        }
+    }
 }
 
 void AMapSpriteRenderer::ClearAll()
 {
-	for (auto& Pair : TextureToHISM)
-	{
-		if (Pair.Value)
+    for (auto& Pair : TextureToHISM)
+    {
+        if (Pair.Value)
 		{
 			Pair.Value->DestroyComponent();
 		}
 	}
 	TextureToHISM.Empty();
 }
-
 UHierarchicalInstancedStaticMeshComponent* AMapSpriteRenderer::GetOrCreateHISMForTexture(UTexture2D* Texture)
 {
 	if (!Texture) return nullptr;
@@ -157,48 +157,3 @@ FTransform AMapSpriteRenderer::BuildInstanceTransform(int32 GridX, int32 GridY, 
 	return T;
 }
 
-void AMapSpriteRenderer::RebuildInternal()
-{
-	if (!MapSource || !MapSource->IsMapReady() || !TextureSet)
-	{
-		return;
-	}
-
-	// Drop previous content
-	ClearAll();
-
-	const FIntPoint Size = MapSource->GetSize();
-
-	// Iterate over all cells
-	for (int32 Y = 0; Y < Size.Y; ++Y)
-	{
-		for (int32 X = 0; X < Size.X; ++X)
-		{
-			// Background
-			FGameplayTag BgTag;
-			if (MapSource->GetBackgroundAt(X, Y, BgTag))
-			{
-				if (UTexture2D* BgTex = TextureSet->FindBackgroundTexture(BgTag))
-				{
-					if (auto* HISM = GetOrCreateHISMForTexture(BgTex))
-					{
-						HISM->AddInstance(BuildInstanceTransform(X, Y, BackgroundLayer));
-					}
-				}
-			}
-
-			// Object
-			FGameplayTag ObjTag; int32 Durability = 0;
-			if (MapSource->GetObjectAt(X, Y, ObjTag, Durability))
-			{
-				if (UTexture2D* ObjTex = TextureSet->FindObjectTexture(ObjTag))
-				{
-					if (auto* HISM = GetOrCreateHISMForTexture(ObjTex))
-					{
-						HISM->AddInstance(BuildInstanceTransform(X, Y, ObjectLayer));
-					}
-				}
-			}
-		}
-	}
-}

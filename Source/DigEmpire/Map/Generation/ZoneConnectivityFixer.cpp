@@ -45,7 +45,7 @@ bool UZoneConnectivityFixer::Generate(UMapGrid2D* MapGrid,
             Q.Reset(); Q.Add({(int16)x,(int16)y}); Comp[id] = curComp;
             while (!Q.IsEmpty())
             {
-                const FNode n = Q.Pop(false);
+                const FNode n = Q.Pop(EAllowShrinking::No);
                 ++size;
                 const int nid = Idx(n.X, n.Y, W);
                 // 4-neighbors

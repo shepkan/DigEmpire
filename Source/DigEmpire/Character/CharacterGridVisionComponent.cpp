@@ -88,6 +88,8 @@ void UCharacterGridVisionComponent::DoVisionTick()
 
     const int32 R2 = R * R;
 
+    TArray<FGridCellWithCoord> NewlySeen;
+
     for (int32 y = MinY; y <= MaxY; ++y)
     {
         for (int32 x = MinX; x <= MaxX; ++x)
@@ -97,8 +99,14 @@ void UCharacterGridVisionComponent::DoVisionTick()
             if (dx*dx + dy*dy > R2) continue; // outside circle
             if (!MapComponent->IsInBounds(x, y)) continue;
 
+            bool bWasViewed = false;
             if (UMapGrid2D* Map = MapComponent->GetMap())
             {
+                FMapCell Tmp;
+                if (Map->GetCell(x, y, Tmp))
+                {
+                    bWasViewed = Tmp.bVieved;
+                }
                 Map->SetViewedAt(x, y, true);
             }
 
@@ -106,8 +114,21 @@ void UCharacterGridVisionComponent::DoVisionTick()
             Entry.Coord = FIntPoint(x, y);
             MapComponent->GetCell(x, y, Entry.Cell); // if fails, leaves default cell
             Payload.Cells.Add(Entry);
+
+            if (!bWasViewed)
+            {
+                NewlySeen.Add(Entry);
+            }
         }
     }
 
     UGameplayMessageSubsystem::Get(this).BroadcastMessage(VisionChannel, Payload);
+
+    if (FirstSeenChannel.IsValid() && NewlySeen.Num() > 0)
+    {
+        FCellsFirstSeenMessage First;
+        First.SourceActor = GetOwner();
+        First.Cells = MoveTemp(NewlySeen);
+        UGameplayMessageSubsystem::Get(this).BroadcastMessage(FirstSeenChannel, First);
+    }
 }

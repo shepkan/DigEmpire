@@ -44,3 +44,16 @@ struct FCharacterGridVisionMessage
     TArray<FGridCellWithCoord> Cells;
 };
 
+/** Cells that have been seen for the first time */
+USTRUCT(BlueprintType)
+struct FCellsFirstSeenMessage
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly)
+    TObjectPtr<AActor> SourceActor = nullptr;
+
+    /** Newly seen cells (each appears only once overall) */
+    UPROPERTY(BlueprintReadOnly)
+    TArray<FGridCellWithCoord> Cells;
+};

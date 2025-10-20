@@ -30,9 +30,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Map")
 	TObjectPtr<UMapGrid2DComponent> MapSource = nullptr;
 
-	/** Event Bus channel to listen to when the map is ready (must match the publisher). */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Map|Events")
-	FGameplayTag MapReadyChannel;
+    /** Event Bus channel to listen for first-seen cells (must match the publisher). */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Map|Events")
+    FGameplayTag FirstSeenChannel;
 
 	/** Data asset with textures for background/object tags. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Rendering")
@@ -70,9 +70,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Rendering")
 	int32 ObjectLayer = 1;
 
-	/** Rebuild the whole map immediately (if MapSource is valid and ready). */
-	UFUNCTION(BlueprintCallable, Category="Rendering")
-	void RebuildNow();
+    // No full rebuild; rendering is event-driven.
 
 protected:
 	virtual void BeginPlay() override;
@@ -83,8 +81,8 @@ private:
 	UPROPERTY(Transient)
 	TMap<TObjectPtr<UTexture2D>, TObjectPtr<UHierarchicalInstancedStaticMeshComponent>> TextureToHISM;
 
-	/** Listener handle for Gameplay Message Subsystem. */
-	FGameplayMessageListenerHandle MapReadyHandle;
+    /** Listener handle for first-seen messages. */
+    FGameplayMessageListenerHandle FirstSeenHandle;
 
 	/** Find or create a HISM for a given texture (creates a MID with that texture). */
 	UHierarchicalInstancedStaticMeshComponent* GetOrCreateHISMForTexture(UTexture2D* Texture);
@@ -92,8 +90,8 @@ private:
 	/** Build transform for a tile at grid (X,Y) placed on a given layer index. */
 	FTransform BuildInstanceTransform(int32 GridX, int32 GridY, int32 LayerIndex) const;
 
-	/** Subscribe to Event Bus for map-ready; also do a one-shot ready check. */
-	void SetupMapReadySubscription();
+    /** Subscribe to Event Bus for first-seen cells. */
+    void SetupFirstSeenSubscription();
 
 	/** Try to auto-locate a map component in the world if not assigned. */
 	void TryAutoFindMapComponent();
@@ -101,9 +99,6 @@ private:
 	/** Clear all instances/components generated so far. */
 	void ClearAll();
 
-	/** Internal full rebuild using MapSource + TextureSet. */
-	void RebuildInternal();
-
-	/** Callback for Event Bus payload. */
-	void OnMapReadyMessage(const struct FMapReadyMessage& Msg);
+    /** Handle first-seen payload. */
+    void OnCellsFirstSeen(const struct FCellsFirstSeenMessage& Msg);
 };

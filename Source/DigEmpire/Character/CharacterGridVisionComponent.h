@@ -40,6 +40,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Vision|Events")
     FGameplayTag VisionChannel;
 
+    /** Event Bus channel to publish cells that became viewed for the first time. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Vision|Events")
+    FGameplayTag FirstSeenChannel;
+
 protected:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -57,4 +61,3 @@ private:
     /** Helper: convert world location to grid float coords. */
     FVector2D WorldToGridFloat(const FVector& WorldLocation) const;
 };
-
