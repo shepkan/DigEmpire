@@ -12,19 +12,27 @@
 
 AMapSpriteRenderer::AMapSpriteRenderer()
 {
-	PrimaryActorTick.bCanEverTick = false;
+    PrimaryActorTick.bCanEverTick = false;
 
-	// Root scene to attach HISM components under it
-	USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
-	SetRootComponent(Root);
+    // Root scene to attach HISM components under it
+    USceneComponent* Root = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
+    SetRootComponent(Root);
+    // HISM components are Static; parent must be Static too
+    Root->SetMobility(EComponentMobility::Static);
 }
 
 void AMapSpriteRenderer::BeginPlay()
 {
-	Super::BeginPlay();
+    Super::BeginPlay();
 
-	// Try to auto-pick a map component if none assigned
-	TryAutoFindMapComponent();
+    // Ensure root is Static at runtime as well (for already-placed actors)
+    if (USceneComponent* Root = GetRootComponent())
+    {
+        Root->SetMobility(EComponentMobility::Static);
+    }
+
+    // Try to auto-pick a map component if none assigned
+    TryAutoFindMapComponent();
 
 	// Subscribe to map-ready messages + do one-shot check if already ready
 	SetupMapReadySubscription();
@@ -130,6 +138,7 @@ UHierarchicalInstancedStaticMeshComponent* AMapSpriteRenderer::GetOrCreateHISMFo
 	HISM->SetStaticMesh(TilePlaneMesh);
 	HISM->SetMobility(EComponentMobility::Static);
 	HISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	HISM->SetCastShadow(false);
 
 	UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(TileBaseMaterial, this);
 	MID->SetTextureParameterValue(TextureParamName, Texture);
