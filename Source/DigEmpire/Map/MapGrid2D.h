@@ -7,6 +7,8 @@
 #include "Rooms/RoomTypes.h"                // FRoomInfo
 #include "MapGrid2D.generated.h"
 
+class ACellActor;
+
 /** Single map cell data */
 USTRUCT(BlueprintType)
 struct FMapCell
@@ -24,6 +26,10 @@ struct FMapCell
 	/** Object durability/health. <=0 means object is absent */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Cell")
 	int32 ObjectDurability = 0;
+
+    /** Optional actor placed on this cell. If set, use it to determine blocking. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category="Cell")
+    TObjectPtr<ACellActor> Occupant = nullptr;
 
 	/** Quick predicate: does the cell have an object? */
     bool HasObject() const
@@ -75,10 +81,18 @@ public:
 	bool GetBackgroundAt(int32 X, int32 Y, FGameplayTag& OutBackgroundTag) const;
 
 	/** Get object tag and durability (false if no object or out of bounds) */
-	UFUNCTION(BlueprintPure, Category="MapGrid")
-	bool GetObjectAt(int32 X, int32 Y, FGameplayTag& OutObjectTag, int32& OutDurability) const;
+    UFUNCTION(BlueprintPure, Category="MapGrid")
+    bool GetObjectAt(int32 X, int32 Y, FGameplayTag& OutObjectTag, int32& OutDurability) const;
 
-	/** Fast access to a whole cell (false if out of bounds) */
+    /** Set the actor occupant at a cell (nullptr to clear). */
+    UFUNCTION(BlueprintCallable, Category="MapGrid")
+    bool SetActorAt(int32 X, int32 Y, ACellActor* InActor);
+
+    /** Get the actor occupant at a cell (nullptr if none or OOB). */
+    UFUNCTION(BlueprintPure, Category="MapGrid")
+    ACellActor* GetActorAt(int32 X, int32 Y) const;
+
+    /** Fast access to a whole cell (false if out of bounds) */
     UFUNCTION(BlueprintPure, Category="MapGrid")
     bool GetCell(int32 X, int32 Y, FMapCell& OutCell) const;
 

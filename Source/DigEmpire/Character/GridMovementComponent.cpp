@@ -3,6 +3,8 @@
 #include "EngineUtils.h"
 #include "GameplayTagContainer.h"
 #include "DigEmpire/Map/MapGrid2DComponent.h"
+#include "DigEmpire/Map/MapGrid2D.h"
+#include "DigEmpire/Map/CellActor.h"
 #include "DigEmpire/BusEvents/MapGrid2DMessages.h"
 #include "GameFramework/GameplayMessageSubsystem.h"
 
@@ -203,6 +205,15 @@ bool UGridMovementComponent::IsWorldPositionValid(const FVector& WorldPos) const
 
 bool UGridMovementComponent::IsCellBlocked(int32 GX, int32 GY) const
 {
+    FMapCell Cell;
+    if (MapComponent->GetCell(GX, GY, Cell))
+    {
+        if (Cell.Occupant)
+        {
+            return Cell.Occupant->IsBlocked();
+        }
+    }
+
 	FGameplayTag Obj; int32 Durability = 0;
 	if (!MapComponent->GetObjectAt(GX, GY, Obj, Durability))
 	{

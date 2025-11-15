@@ -15,6 +15,7 @@ void UMapGrid2D::Initialize(int32 InSizeX, int32 InSizeY)
         Cell.ObjectTag = FGameplayTag();     // empty
         Cell.ObjectDurability = 0;
         Cell.bVieved = false;
+        Cell.Occupant = nullptr;
         // ZoneId defaults from struct initializer
     }
 }
@@ -74,6 +75,19 @@ bool UMapGrid2D::GetObjectAt(int32 X, int32 Y, FGameplayTag& OutObjectTag, int32
     OutObjectTag = Cell.ObjectTag;
     OutDurability = Cell.ObjectDurability;
     return true;
+}
+
+bool UMapGrid2D::SetActorAt(int32 X, int32 Y, ACellActor* InActor)
+{
+    if (!IsInBounds(X, Y)) return false;
+    Cells[Index(X, Y)].Occupant = InActor;
+    return true;
+}
+
+ACellActor* UMapGrid2D::GetActorAt(int32 X, int32 Y) const
+{
+    if (!IsInBounds(X, Y)) return nullptr;
+    return Cells[Index(X, Y)].Occupant.Get();
 }
 
 bool UMapGrid2D::GetCell(int32 X, int32 Y, FMapCell& OutCell) const

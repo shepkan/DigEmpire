@@ -12,6 +12,8 @@
 #include "Generation/CaveGenerator.h"
 #include "Generation/CaveGenSettings.h"
 #include "Generation/ZoneConnectivityFixer.h"
+#include "Generation/ZoneDoorPlacer.h"
+#include "Generation/ZoneDoorSettings.h"
 
 UMapGrid2DComponent::UMapGrid2DComponent()
 {
@@ -52,12 +54,22 @@ bool UMapGrid2DComponent::GetBackgroundAt(int32 X, int32 Y, FGameplayTag& OutBac
 
 bool UMapGrid2DComponent::GetObjectAt(int32 X, int32 Y, FGameplayTag& OutObjectTag, int32& OutDurability) const
 {
-	return IsMapReady() ? MapInstance->GetObjectAt(X, Y, OutObjectTag, OutDurability) : false;
+    return IsMapReady() ? MapInstance->GetObjectAt(X, Y, OutObjectTag, OutDurability) : false;
+}
+
+bool UMapGrid2DComponent::SetActorAt(int32 X, int32 Y, ACellActor* InActor)
+{
+    return IsMapReady() ? MapInstance->SetActorAt(X, Y, InActor) : false;
+}
+
+ACellActor* UMapGrid2DComponent::GetActorAt(int32 X, int32 Y) const
+{
+    return IsMapReady() ? MapInstance->GetActorAt(X, Y) : nullptr;
 }
 
 bool UMapGrid2DComponent::GetCell(int32 X, int32 Y, FMapCell& OutCell) const
 {
-	return IsMapReady() ? MapInstance->GetCell(X, Y, OutCell) : false;
+    return IsMapReady() ? MapInstance->GetCell(X, Y, OutCell) : false;
 }
 
 void UMapGrid2DComponent::InitializeAndBuild()
@@ -117,6 +129,13 @@ void UMapGrid2DComponent::InitializeAndBuild()
 			UZoneConnectivityFixer* Fixer = NewObject<UZoneConnectivityFixer>();
 			Fixer->Generate(MapInstance, ZoneLabels, BorderSettings);
 		}
+
+        // Place doors at the center of each passage if configured
+        if (DoorSettings && DoorSettings->DoorClass)
+        {
+            UZoneDoorPlacer* DoorPlacer = NewObject<UZoneDoorPlacer>();
+            DoorPlacer->Generate(MapInstance, DoorSettings, GetWorld());
+        }
 	}
 
 	// Notify via Event Bus.
