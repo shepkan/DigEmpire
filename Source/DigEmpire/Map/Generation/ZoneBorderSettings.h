@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "DigEmpire/Map/Generation/MapGenerationStepDataBase.h"
 #include "GameplayTagContainer.h"
 #include "ZoneBorderSettings.generated.h"
 
@@ -25,9 +26,9 @@ struct FZonePassageCap
  * Degree caps and global passage spacing are supported.
  */
 UCLASS(BlueprintType)
-class UZoneBorderSettings : public UDataAsset
+class UZoneBorderSettings : public UMapGenerationStepDataBase
 {
-	GENERATED_BODY()
+    GENERATED_BODY()
 public:
 	/** Object tag to place as a wall (blocking). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Borders")
@@ -74,6 +75,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Debug")
 	float DebugSphereRadiusUU = 12.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Debug")
-	float DebugLifetime = 5.f;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Debug")
+    float DebugLifetime = 5.f;
+
+    // Execute step: place walls on zone borders and carve passages
+    virtual void ExecuteGenerationStep(UMapGrid2D* Map, UWorld* World, TArray<int32>& InOutZoneLabels) const override;
 };

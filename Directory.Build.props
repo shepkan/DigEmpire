@@ -1,0 +1,11 @@
+<Project>
+  <ItemGroup>
+    <!-- Перебиваем версию, которую тянет движок -->
+    <PackageReference Update="Magick.NET-Q16-HDRI-AnyCPU" Version="14.8.0" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <!-- На время: не считатть NU1902 ошибкой -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1902</WarningsNotAsErrors>
+  </PropertyGroup>
+</Project>

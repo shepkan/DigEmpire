@@ -7,12 +7,8 @@
 #include "MapGrid2DComponent.generated.h"
 
 class UMapGrid2D;
-class UZoneGenSettings;
-class UZoneBorderSettings;
-class URoomGenSettings;
-class UCaveGenSettings;
 class ACellActor;
-class UZoneDoorSettings;
+class UMapGenerationStepDataBase;
 
 /**
  * Component that owns a UMapGrid2D instance.
@@ -35,23 +31,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="MapGrid|Init", meta=(ClampMin="1"))
 	int32 MapSizeX = 64;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="MapGrid|Init", meta=(ClampMin="1"));
-	TObjectPtr<UZoneGenSettings> ZoneSettings = nullptr;
-	
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="MapGrid|Init", meta=(ClampMin="1"));
-    TObjectPtr<UZoneBorderSettings> BorderSettings = nullptr;
-
-    /** Rooms generation settings (optional). */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="MapGrid|Init")
-    TObjectPtr<URoomGenSettings> RoomSettings = nullptr;
-
-    /** Cave CA settings (optional). Runs after rooms, per-zone, with immutable walls/rooms/passages. */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="MapGrid|Init")
-    TObjectPtr<UCaveGenSettings> CaveSettings = nullptr;
-
-    /** Door placement settings (optional). Places a door actor at each passage. */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="MapGrid|Init")
-    TObjectPtr<UZoneDoorSettings> DoorSettings = nullptr;
+    /** Ordered list of generation steps to execute. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="MapGrid|Generation")
+    TArray<TObjectPtr<UMapGenerationStepDataBase>> GenerationSteps;
 
 	/** Map height (in cells). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="MapGrid|Init", meta=(ClampMin="1"))

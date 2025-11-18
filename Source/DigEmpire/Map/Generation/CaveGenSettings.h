@@ -2,11 +2,12 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "DigEmpire/Map/Generation/MapGenerationStepDataBase.h"
 #include "CaveGenSettings.generated.h"
 
 /** Settings for per-zone cellular automata cave generation. */
 UCLASS(BlueprintType)
-class UCaveGenSettings : public UDataAsset
+class UCaveGenSettings : public UMapGenerationStepDataBase
 {
     GENERATED_BODY()
 public:
@@ -29,5 +30,11 @@ public:
     /** Random seed; if < 0 a random seed is used. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Cave|Random")
     int32 RandomSeed = -1;
-};
 
+    /** Border settings reference for wall tags/durability. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Cave")
+    TObjectPtr<class UZoneBorderSettings> BorderSettings;
+
+    // Execute step: run cave CA per zone
+    virtual void ExecuteGenerationStep(UMapGrid2D* Map, UWorld* World, TArray<int32>& InOutZoneLabels) const override;
+};

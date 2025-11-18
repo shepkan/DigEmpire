@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "DigEmpire/Map/Generation/MapGenerationStepDataBase.h"
 #include "RoomGenSettings.generated.h"
 
 /** Desired room specification. */
@@ -25,7 +26,7 @@ struct FRoomSpec
 
 /** Data asset that contains room requests. */
 UCLASS(BlueprintType)
-class URoomGenSettings : public UDataAsset
+class URoomGenSettings : public UMapGenerationStepDataBase
 {
     GENERATED_BODY()
 public:
@@ -40,4 +41,11 @@ public:
     /** Random seed; if < 0 a random seed is used. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Random")
     int32 RandomSeed = -1;
+
+    /** Border settings providing wall tag/durability for room walls. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Rooms")
+    TObjectPtr<class UZoneBorderSettings> BorderSettings;
+
+    // Execute step: run room generator
+    virtual void ExecuteGenerationStep(UMapGrid2D* Map, UWorld* World, TArray<int32>& InOutZoneLabels) const override;
 };

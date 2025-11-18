@@ -3,17 +3,7 @@
 #include "MapGrid2D.h"
 #include "DigEmpire/BusEvents/MapGrid2DMessages.h"
 #include "GameFramework/GameplayMessageSubsystem.h"
-#include "Generation/ZoneBorderGenerator.h"
-#include "Generation/ZonePassageGenerator.h"
-#include "Zones/MapZoneGenerator.h"
-#include "Zones/ZoneGenSettings.h"
-#include "Rooms/RoomGenerator.h"
-#include "Rooms/RoomGenSettings.h"
-#include "Generation/CaveGenerator.h"
-#include "Generation/CaveGenSettings.h"
-#include "Generation/ZoneConnectivityFixer.h"
-#include "Generation/ZoneDoorPlacer.h"
-#include "Generation/ZoneDoorSettings.h"
+#include "Generation/MapGenerationStepDataBase.h"
 
 UMapGrid2DComponent::UMapGrid2DComponent()
 {
@@ -85,61 +75,21 @@ void UMapGrid2DComponent::InitializeAndBuild()
 	const int32 SafeSizeY = FMath::Max(1, MapSizeY);
 	MapInstance->Initialize(SafeSizeX, SafeSizeY);
 
-	// Fill and build borders.
-	FillBackground();
-	//BuildBorder();
+    // Fill and build borders.
+    FillBackground();
 
-	UMapZoneGenerator* Gen = NewObject<UMapZoneGenerator>();
-	TArray<int32> ZoneLabels;
-	const bool bOk = Gen->Generate(MapInstance, ZoneSettings, GetWorld(), ZoneLabels);
-
-	if (bOk)
-	{
-		// Persist zone labels into the map cells
-		MapInstance->ApplyZoneLabels(ZoneLabels);
-        UZoneBorderGenerator* BorderGen = NewObject<UZoneBorderGenerator>();
-        if (BorderGen->Generate(MapInstance, ZoneLabels, BorderSettings))
+    // Execute configured generation steps in order
+    TArray<int32> ZoneLabels;
+    for (const UMapGenerationStepDataBase* Step : GenerationSteps)
+    {
+        if (Step)
         {
-            // After walls, carve passages and store them on the map
-            UZonePassageGenerator* PassageGen = NewObject<UZonePassageGenerator>();
-            if (PassageGen->Generate(MapInstance, ZoneLabels, BorderSettings))
-            {
-                MapInstance->SetPassages(PassageGen->GetPassages());
-            }
+            Step->ExecuteGenerationStep(MapInstance, GetWorld(), ZoneLabels);
         }
+    }
 
-		// Optional: place rooms inside zones using RoomSettings
-		if (RoomSettings)
-		{
-			URoomGenerator* RoomGen = NewObject<URoomGenerator>();
-			RoomGen->Generate(MapInstance, ZoneLabels, RoomSettings, BorderSettings);
-		}
-
-		// Optional: run per-zone cave cellular automata after rooms
-		if (CaveSettings)
-		{
-			UCaveGenerator* CaveGen = NewObject<UCaveGenerator>();
-			CaveGen->Generate(MapInstance, ZoneLabels, CaveSettings, BorderSettings);
-		}
-
-		// (debug visualization removed)
-
-		// Connect open areas inside each zone to the largest area using minimal carving
-		{
-			UZoneConnectivityFixer* Fixer = NewObject<UZoneConnectivityFixer>();
-			Fixer->Generate(MapInstance, ZoneLabels, BorderSettings);
-		}
-
-        // Place doors at the center of each passage if configured
-        if (DoorSettings && DoorSettings->DoorClass)
-        {
-            UZoneDoorPlacer* DoorPlacer = NewObject<UZoneDoorPlacer>();
-            DoorPlacer->Generate(MapInstance, DoorSettings, GetWorld());
-        }
-	}
-
-	// Notify via Event Bus.
-	BroadcastMapReady();
+    // Notify via Event Bus.
+    BroadcastMapReady();
 }
 
 

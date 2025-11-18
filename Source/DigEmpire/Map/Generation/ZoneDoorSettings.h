@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "DigEmpire/Map/Generation/MapGenerationStepDataBase.h"
 #include "DigEmpire/Map/CellActor.h"
 #include "ZoneDoorSettings.generated.h"
 
@@ -10,7 +11,7 @@
  * Provides the actor class and optional transform parameters.
  */
 UCLASS(BlueprintType)
-class UZoneDoorSettings : public UDataAsset
+class UZoneDoorSettings : public UMapGenerationStepDataBase
 {
     GENERATED_BODY()
 
@@ -26,5 +27,7 @@ public:
     /** World Z to place spawned doors at. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Door")
     float ZOffsetUU = 0.f;
-};
 
+    // Execute step: place door actors along passages
+    virtual void ExecuteGenerationStep(UMapGrid2D* Map, UWorld* World, TArray<int32>& InOutZoneLabels) const override;
+};

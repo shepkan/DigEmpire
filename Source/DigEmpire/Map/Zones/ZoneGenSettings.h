@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#include "DigEmpire/Map/Generation/MapGenerationStepDataBase.h"
 #include "GameplayTagContainer.h"
 #include "ZoneGenSettings.generated.h"
 
@@ -25,9 +26,9 @@ struct FZoneWeight
  * Controls seeds, soft quotas, non-touch constraints and debug draw.
  */
 UCLASS(BlueprintType)
-class UZoneGenSettings : public UDataAsset
+class UZoneGenSettings : public UMapGenerationStepDataBase
 {
-	GENERATED_BODY()
+    GENERATED_BODY()
 public:
 	/** List of zone weights; length = number of zones. ZoneIndex should be 0..NumZones-1. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Zones")
@@ -74,6 +75,9 @@ public:
 	float DebugLifetime = 5.f;
 
 	/** Z offset for debug spheres. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Debug")
-	float DebugZOffset = 10.f;
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Debug")
+    float DebugZOffset = 10.f;
+
+    // Execute step: run the zone generator and fill labels
+    virtual void ExecuteGenerationStep(UMapGrid2D* Map, UWorld* World, TArray<int32>& InOutZoneLabels) const override;
 };
