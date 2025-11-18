@@ -28,6 +28,14 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Door")
     float ZOffsetUU = 0.f;
 
+    /** Actor class to spawn for a key (must derive from ACellActor, ideally AKeyCellActor). */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Key")
+    TSubclassOf<ACellActor> KeyClass;
+
+    /** Optional per-zone color tags for doors/keys. ZoneId -> DoorColor tag. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Key")
+    TMap<int32, FGameplayTag> ZoneColorTags;
+
     // Execute step: place door actors along passages
     virtual void ExecuteGenerationStep(UMapGrid2D* Map, UWorld* World, TArray<int32>& InOutZoneLabels) const override;
 };
