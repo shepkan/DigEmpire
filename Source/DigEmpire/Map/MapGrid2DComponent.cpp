@@ -122,3 +122,12 @@ void UMapGrid2DComponent::BroadcastMapReady()
 	UGameplayMessageSubsystem& Bus = UGameplayMessageSubsystem::Get(this);
 	Bus.BroadcastMessage(MapReadyChannel, Message);
 }
+
+void UMapGrid2DComponent::SetZoneDepths(const TArray<int32>& Depths)
+{
+    ZoneInfos.SetNum(Depths.Num());
+    for (int32 i = 0; i < Depths.Num(); ++i)
+    {
+        ZoneInfos[i].Depth = Depths[i];
+    }
+}

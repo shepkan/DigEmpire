@@ -10,6 +10,15 @@ class UMapGrid2D;
 class ACellActor;
 class UMapGenerationStepDataBase;
 
+USTRUCT(BlueprintType)
+struct FZoneInfo
+{
+    GENERATED_BODY()
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Zone")
+    int32 Depth = -1;
+};
+
 /**
  * Component that owns a UMapGrid2D instance.
  * It initializes the map, fills the background, builds a border,
@@ -90,8 +99,17 @@ public:
 	void InitializeAndBuild();
 
 	/** Returns the underlying map object (can be null). */
-	UFUNCTION(BlueprintPure, Category="MapGrid|Access")
-	UMapGrid2D* GetMap() const { return MapInstance; }
+    UFUNCTION(BlueprintPure, Category="MapGrid|Access")
+    UMapGrid2D* GetMap() const { return MapInstance; }
+
+    /** Per-zone computed info (e.g., depth from Zone 0). Index = ZoneId. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="MapGrid|Zones")
+    TArray<FZoneInfo> ZoneInfos;
+
+    UFUNCTION(BlueprintPure, Category="MapGrid|Zones")
+    int32 GetZoneDepth(int32 ZoneId) const { return ZoneInfos.IsValidIndex(ZoneId) ? ZoneInfos[ZoneId].Depth : -1; }
+
+    void SetZoneDepths(const TArray<int32>& Depths);
 
 protected:
 	virtual void BeginPlay() override;
