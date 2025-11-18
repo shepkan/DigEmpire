@@ -96,7 +96,7 @@ bool UZoneDoorPlacer::Generate(UMapGrid2D* MapGrid, const UZoneDoorSettings* Set
             if (ZoneDepth == 0)
             {
                 // Zone 0 claims all its adjacent doors
-                D.Door->DoorColor = Color;
+                D.Door->SetDoorColor(Color);
                 ColoredDoorIdx.Add(i);
                 bClaimedAny = true;
             }
@@ -105,7 +105,7 @@ bool UZoneDoorPlacer::Generate(UMapGrid2D* MapGrid, const UZoneDoorSettings* Set
                 // Only claim doors that lead to zones with depth != 0, and are still uncolored
                 if (OtherDepth != 0)
                 {
-                    D.Door->DoorColor = Color;
+                    D.Door->SetDoorColor(Color);
                     ColoredDoorIdx.Add(i);
                     bClaimedAny = true;
                 }
@@ -130,7 +130,7 @@ bool UZoneDoorPlacer::Generate(UMapGrid2D* MapGrid, const UZoneDoorSettings* Set
                 }
                 if (AKeyCellActor* Key = Cast<AKeyCellActor>(SpawnedKey))
                 {
-                    Key->DoorColor = Color;
+                    Key->SetDoorColor(Color);
                 }
             }
         }

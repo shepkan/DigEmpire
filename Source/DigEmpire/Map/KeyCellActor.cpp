@@ -26,3 +26,8 @@ void AKeyCellActor::UseKey()
     Destroy();
 }
 
+void AKeyCellActor::SetDoorColor(const FGameplayTag& InColor)
+{
+    DoorColor = InColor;
+    OnDoorColorAssigned(InColor);
+}

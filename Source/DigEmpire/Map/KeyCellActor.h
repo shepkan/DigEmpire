@@ -21,5 +21,13 @@ public:
     /** Call from Blueprint to consume the key and open matching doors. */
     UFUNCTION(BlueprintCallable, Category="Key")
     void UseKey();
-};
 
+    /** Set the key color tag and notify BP. */
+    UFUNCTION(BlueprintCallable, Category="Key")
+    void SetDoorColor(const FGameplayTag& InColor);
+
+    /** Fired when DoorColor is assigned (via SetDoorColor). */
+    UFUNCTION(BlueprintNativeEvent, Category="Key|Events")
+    void OnDoorColorAssigned(const FGameplayTag& InColor);
+    virtual void OnDoorColorAssigned_Implementation(const FGameplayTag& /*InColor*/) {}
+};

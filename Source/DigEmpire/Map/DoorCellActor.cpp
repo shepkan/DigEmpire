@@ -10,3 +10,8 @@ void ADoorCellActor::OpenDoor()
     OnDoorOpened();
 }
 
+void ADoorCellActor::SetDoorColor(const FGameplayTag& InColor)
+{
+    DoorColor = InColor;
+    OnDoorColorAssigned(InColor);
+}

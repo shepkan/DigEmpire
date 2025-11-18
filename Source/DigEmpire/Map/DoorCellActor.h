@@ -24,6 +24,10 @@ public:
     UFUNCTION(BlueprintCallable, Category="Door")
     virtual void OpenDoor();
 
+    /** Set the door color tag and notify BP. */
+    UFUNCTION(BlueprintCallable, Category="Door")
+    void SetDoorColor(const FGameplayTag& InColor);
+
     UFUNCTION(BlueprintPure, Category="Door")
     bool IsOpen() const { return bIsOpen; }
 
@@ -32,5 +36,9 @@ public:
     UFUNCTION(BlueprintNativeEvent, Category="Door|Events")
     void OnDoorOpened();
     virtual void OnDoorOpened_Implementation() {}
-};
 
+    /** Fired when DoorColor is assigned (via SetDoorColor). */
+    UFUNCTION(BlueprintNativeEvent, Category="Door|Events")
+    void OnDoorColorAssigned(const FGameplayTag& InColor);
+    virtual void OnDoorColorAssigned_Implementation(const FGameplayTag& /*InColor*/) {}
+};
