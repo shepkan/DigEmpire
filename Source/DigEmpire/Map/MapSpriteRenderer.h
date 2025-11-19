@@ -108,15 +108,15 @@ private:
 
     // ===== Atlas + Pool path for object layer =====
     /** If true, render object layer via a single atlas HISM with per-instance custom data. */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Rendering|Atlas")
+    UPROPERTY(EditAnywhere, Category="Rendering|Atlas")
     bool bUseObjectAtlas = false;
 
     /** Texture atlas for objects. Must match TileBaseMaterial expectations. */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Rendering|Atlas")
+    UPROPERTY(EditAnywhere, Category="Rendering|Atlas")
     TObjectPtr<UTexture2D> ObjectAtlasTexture = nullptr;
 
     /** GameplayTag -> SpriteIndex mapping in the atlas. Configure in editor. */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Rendering|Atlas")
+    UPROPERTY(EditAnywhere, Category="Rendering|Atlas")
     TMap<FGameplayTag, int32> ObjectAtlasIndices;
 
     /** HISM used for atlas-based object rendering. */
