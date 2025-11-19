@@ -4,6 +4,7 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "GameplayTagContainer.h"
+#include "DigEmpire/Config/DEConstants.h"
 #include "CharacterGridVisionComponent.generated.h"
 
 class UMapGrid2DComponent;
@@ -24,9 +25,9 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Vision")
     TObjectPtr<UMapGrid2DComponent> MapComponent = nullptr;
 
-    /** World size of one grid cell (must match your map/renderer). */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Vision", meta=(ClampMin="1"))
-    float TileSize = 100.f;
+    /** World size of one grid cell (read-only; shared project constant). */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Vision", meta=(ClampMin="1"))
+    float TileSize = DEConstants::TileSizeUU;
 
     /** Vision radius in cells (euclidean). */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Vision", meta=(ClampMin="0"))
@@ -36,12 +37,12 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Vision", meta=(ClampMin="0.01"))
     float VisionIntervalSeconds = 0.25f;
 
-    /** Event Bus channel to publish vision messages (e.g. "Gameplay.Character.Vision"). */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Vision|Events")
+    /** Event Bus channel to publish vision messages (read-only in editor). */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Vision|Events")
     FGameplayTag VisionChannel;
 
-    /** Event Bus channel to publish cells that became viewed for the first time. */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Vision|Events")
+    /** Event Bus channel to publish cells that became viewed for the first time (read-only in editor). */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Vision|Events")
     FGameplayTag FirstSeenChannel;
 
 protected:

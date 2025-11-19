@@ -4,6 +4,7 @@
 #include "Engine/DataAsset.h"
 #include "DigEmpire/Map/Generation/MapGenerationStepDataBase.h"
 #include "GameplayTagContainer.h"
+#include "DigEmpire/Config/DEConstants.h"
 #include "ZoneGenSettings.generated.h"
 
 /** Per-zone weight item (relative size target). */
@@ -58,9 +59,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Quotas", meta=(ClampMin="1.0"))
 	float OverfillFactor = 1.08f;
 
-	/** Tile size in world units — only used for debug draw placement. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Debug")
-	float TileSizeUU = 100.f;
+    /** Tile size in world units - only used for debug draw placement (read-only; shared project constant). */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Debug")
+    float TileSizeUU = DEConstants::TileSizeUU;
 
 	/** Enable debug spheres at each cell center, colored by zone id. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Debug")

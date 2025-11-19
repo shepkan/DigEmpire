@@ -10,6 +10,7 @@
 
 #include "DigEmpire/BusEvents/MapGrid2DMessages.h"
 #include "DigEmpire/BusEvents/CharacterGridVisionMessages.h"
+#include "DigEmpire/Tags/DENativeTags.h"
 
 AMapSpriteRenderer::AMapSpriteRenderer()
 {
@@ -20,12 +21,17 @@ AMapSpriteRenderer::AMapSpriteRenderer()
     SetRootComponent(Root);
     // HISM components are Static; parent must be Static too
     Root->SetMobility(EComponentMobility::Static);
+
+    // Default event channel for first-seen cells
+    FirstSeenChannel = TAG_Character_Vision_FirstSeen;
 }
 
 void AMapSpriteRenderer::BeginPlay()
 {
     Super::BeginPlay();
 	
+    FirstSeenChannel = TAG_Character_Vision_FirstSeen;
+
     // Try to auto-pick a map component if none assigned (optional for event-driven)
     TryAutoFindMapComponent();
 

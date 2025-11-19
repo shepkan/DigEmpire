@@ -4,6 +4,7 @@
 #include "Engine/DataAsset.h"
 #include "DigEmpire/Map/Generation/MapGenerationStepDataBase.h"
 #include "DigEmpire/Map/CellActor.h"
+#include "DigEmpire/Config/DEConstants.h"
 #include "ZoneDoorSettings.generated.h"
 
 /**
@@ -20,9 +21,9 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Door")
     TSubclassOf<ACellActor> DoorClass;
 
-    /** Cell-to-world scale for X/Y placement (uu per cell). */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Door", meta=(ClampMin="1.0"))
-    float TileSizeUU = 100.f;
+    /** Cell-to-world scale for X/Y placement (uu per cell) (read-only; shared project constant). */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Door", meta=(ClampMin="1.0"))
+    float TileSizeUU = DEConstants::TileSizeUU;
 
     /** World Z to place spawned doors at. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Door")

@@ -4,6 +4,7 @@
 #include "Engine/DataAsset.h"
 #include "DigEmpire/Map/Generation/MapGenerationStepDataBase.h"
 #include "GameplayTagContainer.h"
+#include "DigEmpire/Config/DEConstants.h"
 #include "ZoneBorderSettings.generated.h"
 
 /** Optional per-zone cap: how many passages (degree) a zone may have. */
@@ -66,8 +67,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Debug")
 	bool bDebugDrawPassages = false;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Debug")
-	float DebugTileSizeUU = 100.f;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Debug")
+	float DebugTileSizeUU = DEConstants::TileSizeUU;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Debug")
 	float DebugZOffset = 15.f;

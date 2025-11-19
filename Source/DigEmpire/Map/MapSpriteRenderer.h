@@ -4,6 +4,7 @@
 #include "GameFramework/Actor.h"
 #include "GameplayTagContainer.h"
 #include "GameFramework/GameplayMessageSubsystem.h"
+#include "DigEmpire/Config/DEConstants.h"
 #include "MapSpriteRenderer.generated.h"
 
 class UHierarchicalInstancedStaticMeshComponent;
@@ -30,8 +31,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Map")
 	TObjectPtr<UMapGrid2DComponent> MapSource = nullptr;
 
-    /** Event Bus channel to listen for first-seen cells (must match the publisher). */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Map|Events")
+    /** Event Bus channel to listen for first-seen cells (must match the publisher). Read-only in editor. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Map|Events")
     FGameplayTag FirstSeenChannel;
 
 	/** Data asset with textures for background/object tags. */
@@ -50,9 +51,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Rendering")
 	FName TextureParamName = TEXT("SpriteTexture");
 
-	/** Tile size in world units (plane default is 100x100 uu). */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Rendering", meta=(ClampMin="1"))
-	float TileSize = 100.f;
+	/** Tile size in world units (read-only; shared project constant). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Rendering", meta=(ClampMin="1"))
+	float TileSize = DEConstants::TileSizeUU;
 
 	/** Z step per layer (final Z = Layer * LayerStep + ZBaseOffset). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Rendering")

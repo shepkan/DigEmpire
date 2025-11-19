@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/PawnMovementComponent.h"
 #include "GameFramework/GameplayMessageSubsystem.h"
+#include "DigEmpire/Config/DEConstants.h"
 #include "GridMovementComponent.generated.h"
 
 class UMapGrid2DComponent;
@@ -26,9 +27,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Grid")
 	TObjectPtr<UMapGrid2DComponent> MapComponent = nullptr;
 
-	/** World size of one grid cell (must match your renderer/map). */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Grid", meta=(ClampMin="1"))
-	float TileSize = 100.f;
+	/** World size of one grid cell (read-only; shared project constant). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Grid", meta=(ClampMin="1"))
+	float TileSize = DEConstants::TileSizeUU;
 
 	/** Collision radius in CELLS (0.0..1.0 ~ within a single cell). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Collision", meta=(ClampMin="0.0"))

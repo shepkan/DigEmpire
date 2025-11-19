@@ -8,17 +8,24 @@
 #include "DigEmpire/Map/MapGrid2DComponent.h"
 #include "DigEmpire/Map/MapGrid2D.h"
 #include "DigEmpire/BusEvents/CharacterGridVisionMessages.h"
+#include "DigEmpire/Tags/DENativeTags.h"
 
 UCharacterGridVisionComponent::UCharacterGridVisionComponent()
 {
     PrimaryComponentTick.bCanEverTick = false;
     bAutoActivate = true;
+    VisionChannel = TAG_Character_Vision;
+    FirstSeenChannel = TAG_Character_Vision_FirstSeen;
 }
 
 void UCharacterGridVisionComponent::BeginPlay()
 {
     Super::BeginPlay();
     if (!MapComponent) { TryAutoFindMap(); }
+
+    // Ensure native defaults even if Blueprint overrides left them empty
+    VisionChannel = TAG_Character_Vision;
+    FirstSeenChannel = TAG_Character_Vision_FirstSeen;
 
     if (VisionIntervalSeconds > 0.f)
     {
