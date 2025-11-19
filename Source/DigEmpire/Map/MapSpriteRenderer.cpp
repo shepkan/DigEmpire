@@ -24,6 +24,7 @@ AMapSpriteRenderer::AMapSpriteRenderer()
 
     // Default event channel for first-seen cells
     FirstSeenChannel = TAG_Character_Vision_FirstSeen;
+    CellsUpdatedChannel = TAG_Map_CellsUpdated;
 }
 
 void AMapSpriteRenderer::BeginPlay()
@@ -37,6 +38,9 @@ void AMapSpriteRenderer::BeginPlay()
 
     // Subscribe to first-seen cell messages
     SetupFirstSeenSubscription();
+
+    // Subscribe to cells-updated to reflect object changes
+    SetupCellsUpdatedSubscription();
 }
 
 void AMapSpriteRenderer::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -45,6 +49,10 @@ void AMapSpriteRenderer::EndPlay(const EEndPlayReason::Type EndPlayReason)
     if (FirstSeenHandle.IsValid())
     {
         UGameplayMessageSubsystem::Get(this).UnregisterListener(FirstSeenHandle);
+    }
+    if (CellsUpdatedHandle.IsValid())
+    {
+        UGameplayMessageSubsystem::Get(this).UnregisterListener(CellsUpdatedHandle);
     }
     Super::EndPlay(EndPlayReason);
 }
@@ -80,6 +88,22 @@ void AMapSpriteRenderer::SetupFirstSeenSubscription()
         });
 }
 
+void AMapSpriteRenderer::SetupCellsUpdatedSubscription()
+{
+    if (!CellsUpdatedChannel.IsValid())
+    {
+        return;
+    }
+
+    UGameplayMessageSubsystem& Bus = UGameplayMessageSubsystem::Get(this);
+    CellsUpdatedHandle = Bus.RegisterListener<FMapCellsUpdatedMessage>(
+        CellsUpdatedChannel,
+        [this](FGameplayTag, const FMapCellsUpdatedMessage& Msg)
+        {
+            OnCellsUpdated(Msg);
+        });
+}
+
 void AMapSpriteRenderer::OnCellsFirstSeen(const FCellsFirstSeenMessage& Msg)
 {
     if (!TextureSet) return;
@@ -104,11 +128,90 @@ void AMapSpriteRenderer::OnCellsFirstSeen(const FCellsFirstSeenMessage& Msg)
             {
                 if (auto* HISM = GetOrCreateHISMForTexture(ObjTex))
                 {
-                    HISM->AddInstance(BuildInstanceTransform(X, Y, ObjectLayer));
+                    const int32 NewIndex = HISM->AddInstance(BuildInstanceTransform(X, Y, ObjectLayer));
+                    // Track object instance for future updates/removal
+                    ObjectInstances.FindOrAdd(Entry.Coord) = { HISM, NewIndex };
                 }
             }
         }
     }
+}
+
+void AMapSpriteRenderer::OnCellsUpdated(const FMapCellsUpdatedMessage& Msg)
+{
+    if (!TextureSet) return;
+    for (const FGridCellWithCoord& Entry : Msg.Cells)
+    {
+        if (Entry.Cell.HasObject())
+        {
+            AddOrUpdateObjectInstance(Entry);
+        }
+        else
+        {
+            RemoveObjectInstanceAt(Entry.Coord);
+        }
+    }
+}
+
+void AMapSpriteRenderer::AddOrUpdateObjectInstance(const FGridCellWithCoord& Entry)
+{
+    const int32 X = Entry.Coord.X;
+    const int32 Y = Entry.Coord.Y;
+    UTexture2D* ObjTex = TextureSet->FindObjectTexture(Entry.Cell.ObjectTag);
+    if (!ObjTex) return;
+
+    UHierarchicalInstancedStaticMeshComponent* DesiredHISM = GetOrCreateHISMForTexture(ObjTex);
+    if (!DesiredHISM) return;
+
+    if (FInstanceRef* Found = ObjectInstances.Find(Entry.Coord))
+    {
+        // If HISM is same, nothing to do (we don't update transforms here)
+        if (Found->Comp == DesiredHISM)
+        {
+            return;
+        }
+
+        // Otherwise remove from old HISM and re-add to new one
+        RemoveObjectInstanceAt(Entry.Coord);
+    }
+
+    const int32 NewIndex = DesiredHISM->AddInstance(BuildInstanceTransform(X, Y, ObjectLayer));
+    ObjectInstances.FindOrAdd(Entry.Coord) = { DesiredHISM, NewIndex };
+}
+
+void AMapSpriteRenderer::RemoveObjectInstanceAt(const FIntPoint& CellCoord)
+{
+    FInstanceRef Ref;
+    if (!ObjectInstances.RemoveAndCopyValue(CellCoord, Ref))
+    {
+        return;
+    }
+
+    if (!Ref.Comp || Ref.Index == INDEX_NONE)
+    {
+        return;
+    }
+
+    // If removing not-last instance, update mapping for the instance that moves into this index
+    const int32 Count = Ref.Comp->GetInstanceCount();
+    if (Ref.Index >= 0 && Ref.Index < Count - 1)
+    {
+        FTransform LastXform;
+        if (Ref.Comp->GetInstanceTransform(Count - 1, LastXform, /*bWorldSpace=*/true))
+        {
+            const FVector Loc = LastXform.GetLocation();
+            const int32 GX = FMath::RoundToInt(Loc.X / TileSize);
+            const int32 GY = FMath::RoundToInt(Loc.Y / TileSize);
+            const FIntPoint MovedCell(GX, GY);
+            if (FInstanceRef* MovedRef = ObjectInstances.Find(MovedCell))
+            {
+                // This cell's instance will move into Ref.Index
+                MovedRef->Index = Ref.Index;
+            }
+        }
+    }
+
+    Ref.Comp->RemoveInstance(Ref.Index);
 }
 
 void AMapSpriteRenderer::ClearAll()
@@ -162,4 +265,3 @@ FTransform AMapSpriteRenderer::BuildInstanceTransform(int32 GridX, int32 GridY, 
 	T.SetScale3D(FVector(Scale, Scale, 1.f));
 	return T;
 }
-

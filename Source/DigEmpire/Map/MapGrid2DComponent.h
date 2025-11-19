@@ -94,6 +94,10 @@ public:
     UFUNCTION(BlueprintPure, Category="MapGrid|Access")
     bool GetCell(int32 X, int32 Y, struct FMapCell& OutCell) const;
 
+    /** Damage object at cell by Damage; broadcasts cell update; returns true if there was an object. */
+    UFUNCTION(BlueprintCallable, Category="MapGrid|Access")
+    bool DamageObjectAt(int32 X, int32 Y, int32 Damage, bool& bOutDestroyed);
+
 	/** Builds or rebuilds the map using current settings and broadcasts the bus event. */
 	UFUNCTION(BlueprintCallable, Category="MapGrid|Init")
 	void InitializeAndBuild();
@@ -119,6 +123,9 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UMapGrid2D> MapInstance = nullptr;
 
-	void FillBackground();
-	void BroadcastMapReady();  // <-- Event Bus publisher
+    void FillBackground();
+    void BroadcastMapReady();  // <-- Event Bus publisher
+
+    /** Broadcast a cells-updated message for the given cells. */
+    void BroadcastCellsUpdated(const TArray<struct FGridCellWithCoord>& Cells);
 };

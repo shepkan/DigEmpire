@@ -13,6 +13,17 @@ class UTexture2D;
 class UStaticMesh;
 class UTileTextureSet;
 class UMapGrid2DComponent;
+struct FGridCellWithCoord;
+
+/** Mapping from grid cell to HISM + instance index for object layer. */
+USTRUCT()
+struct FInstanceRef
+{
+	GENERATED_BODY()
+	
+    TObjectPtr<UHierarchicalInstancedStaticMeshComponent> Comp = nullptr;
+    int32 Index = INDEX_NONE;
+};
 
 /**
  * Actor that renders a 2D grid using instanced meshes (quads) and textures
@@ -22,7 +33,7 @@ class UMapGrid2DComponent;
 UCLASS(BlueprintType, Blueprintable)
 class AMapSpriteRenderer : public AActor
 {
-	GENERATED_BODY()
+    GENERATED_BODY()
 
 public:
 	AMapSpriteRenderer();
@@ -52,8 +63,8 @@ public:
 	FName TextureParamName = TEXT("SpriteTexture");
 
 	/** Tile size in world units (read-only; shared project constant). */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Rendering", meta=(ClampMin="1"))
-	float TileSize = DEConstants::TileSizeUU;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Rendering", meta=(ClampMin="1"))
+    float TileSize = DEConstants::TileSizeUU;
 
 	/** Z step per layer (final Z = Layer * LayerStep + ZBaseOffset). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Rendering")
@@ -71,11 +82,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Rendering")
 	int32 ObjectLayer = 1;
 
+	/** Event Bus channel for cells-updated messages. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Map|Events")
+	FGameplayTag CellsUpdatedChannel;
+
     // No full rebuild; rendering is event-driven.
 
 protected:
-	virtual void BeginPlay() override;
-	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+    virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
 	/** Per-texture HISM cache to avoid creating a new component per instance. Key = Texture pointer. */
@@ -85,6 +100,12 @@ private:
     /** Listener handle for first-seen messages. */
     FGameplayMessageListenerHandle FirstSeenHandle;
 
+    /** Listener handle for cells-updated messages. */
+    FGameplayMessageListenerHandle CellsUpdatedHandle;
+
+    UPROPERTY(Transient)
+    TMap<FIntPoint, FInstanceRef> ObjectInstances;
+
 	/** Find or create a HISM for a given texture (creates a MID with that texture). */
 	UHierarchicalInstancedStaticMeshComponent* GetOrCreateHISMForTexture(UTexture2D* Texture);
 
@@ -93,13 +114,23 @@ private:
 
     /** Subscribe to Event Bus for first-seen cells. */
     void SetupFirstSeenSubscription();
+    void SetupCellsUpdatedSubscription();
 
 	/** Try to auto-locate a map component in the world if not assigned. */
 	void TryAutoFindMapComponent();
 
 	/** Clear all instances/components generated so far. */
-	void ClearAll();
+    void ClearAll();
 
     /** Handle first-seen payload. */
     void OnCellsFirstSeen(const struct FCellsFirstSeenMessage& Msg);
+
+    /** Handle cells updated payload. */
+    void OnCellsUpdated(const struct FMapCellsUpdatedMessage& Msg);
+
+    /** Ensure an object instance exists (and matches current tag/texture) for this cell. */
+    void AddOrUpdateObjectInstance(const FGridCellWithCoord& Entry);
+
+    /** Remove object instance for this cell if it exists. */
+    void RemoveObjectInstanceAt(const FIntPoint& CellCoord);
 };

@@ -53,9 +53,6 @@ private:
     /** Gameplay Message Subsystem listener for vision updates. */
     FGameplayMessageListenerHandle VisionHandle;
 
-    /** Cached visibility state to avoid redundant toggles. */
-    bool bCurrentlyVisible = false;
-
     /** React to current-vision payloads and update mesh visibility. */
-    void HandleVisionMessage(const struct FCharacterGridVisionMessage& Msg);
+    void HandleVisionMessage(const struct FCellsFirstSeenMessage& Msg);
 };

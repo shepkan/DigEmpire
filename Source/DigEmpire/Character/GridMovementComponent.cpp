@@ -38,11 +38,19 @@ void UGridMovementComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void UGridMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
-	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-	if (!PawnOwner || !UpdatedComponent) return;
+    Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+    if (!PawnOwner || !UpdatedComponent) return;
 
-	// 1) Read input (AddMovementInput accumulates here).
-	const FVector Input3D = ConsumeInputVector();           // arbitrary magnitude
+    // Always flush input but ignore when externally blocked
+    const FVector Input3DAll = ConsumeInputVector();
+    if (bExternalMovementBlocked)
+    {
+        VelocityXY = FVector::ZeroVector;
+        return;
+    }
+
+    // 1) Read input (AddMovementInput accumulates here).
+    const FVector Input3D = Input3DAll;           // already consumed above
 	FVector2D Input2D(Input3D.X, Input3D.Y);
 	if (!Input2D.IsNearlyZero())
 	{

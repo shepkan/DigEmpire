@@ -22,20 +22,20 @@ ACellActor::ACellActor()
     CellMesh->SetVisibility(false, true); // hidden until seen/in vision
     CellMesh->SetHiddenInGame(true);
 
-    VisionChannel = TAG_Character_Vision;
+    VisionChannel = TAG_Character_Vision_FirstSeen;
 }
 
 void ACellActor::BeginPlay()
 {
     Super::BeginPlay();
-    VisionChannel = TAG_Character_Vision;
+    VisionChannel = TAG_Character_Vision_FirstSeen;
 
     if (VisionChannel.IsValid())
     {
         UGameplayMessageSubsystem& Bus = UGameplayMessageSubsystem::Get(this);
-        VisionHandle = Bus.RegisterListener<FCharacterGridVisionMessage>(
+        VisionHandle = Bus.RegisterListener<FCellsFirstSeenMessage>(
             VisionChannel,
-            [this](FGameplayTag /*Tag*/, const FCharacterGridVisionMessage& Msg)
+            [this](FGameplayTag /*Tag*/, const FCellsFirstSeenMessage& Msg)
             {
                 HandleVisionMessage(Msg);
             });
@@ -51,32 +51,25 @@ void ACellActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
     Super::EndPlay(EndPlayReason);
 }
 
-void ACellActor::HandleVisionMessage(const FCharacterGridVisionMessage& Msg)
+void ACellActor::HandleVisionMessage(const FCellsFirstSeenMessage& Msg)
 {
     // Determine this actor's grid coordinate by world position
     const FVector Loc = GetActorLocation();
     const int32 GX = FMath::RoundToInt(Loc.X / FMath::Max(1.f, TileSize));
     const int32 GY = FMath::RoundToInt(Loc.Y / FMath::Max(1.f, TileSize));
 
-    bool bInVisionNow = false;
     for (const FGridCellWithCoord& Entry : Msg.Cells)
     {
         if (Entry.Coord.X == GX && Entry.Coord.Y == GY)
         {
-            bInVisionNow = true;
+            if (CellMesh)
+            {
+                CellMesh->SetVisibility(true, true);
+                CellMesh->SetHiddenInGame(!true);
+            }
+            // Blueprint hook
+            OnVisionVisibilityChanged(true);
             break;
         }
-    }
-
-    if (bInVisionNow != bCurrentlyVisible)
-    {
-        bCurrentlyVisible = bInVisionNow;
-        if (CellMesh)
-        {
-            CellMesh->SetVisibility(bCurrentlyVisible, true);
-            CellMesh->SetHiddenInGame(!bCurrentlyVisible);
-        }
-        // Blueprint hook
-        OnVisionVisibilityChanged(bCurrentlyVisible);
     }
 }

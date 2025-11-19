@@ -6,6 +6,8 @@
 #include "GameFramework/Pawn.h"
 #include "DigEmpireCharacterPawnBase.generated.h"
 
+class UDigComponent;
+
 UCLASS()
 class DIGEMPIRE_API ADigEmpireCharacterPawnBase : public APawn
 {
@@ -24,9 +26,22 @@ public:
 	virtual void Tick(float DeltaTime) override;
 
 	// Called to bind functionality to input
-	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
+    virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 private:
-	void InputForward(float Value);
-	void InputRight(float Value);
+    void InputForward(float Value);
+    void InputRight(float Value);
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta=(AllowPrivateAccess="true"))
+    TObjectPtr<UDigComponent> DigComponent;
+
+    // Dig input handlers
+    void OnDigUpPressed();
+    void OnDigUpReleased();
+    void OnDigDownPressed();
+    void OnDigDownReleased();
+    void OnDigLeftPressed();
+    void OnDigLeftReleased();
+    void OnDigRightPressed();
+    void OnDigRightReleased();
 };

@@ -4,6 +4,8 @@
 #include "DigEmpire/BusEvents/MapGrid2DMessages.h"
 #include "GameFramework/GameplayMessageSubsystem.h"
 #include "Generation/MapGenerationStepDataBase.h"
+#include "DigEmpire/BusEvents/CharacterGridVisionMessages.h"
+#include "DigEmpire/Tags/DENativeTags.h"
 
 UMapGrid2DComponent::UMapGrid2DComponent()
 {
@@ -60,6 +62,41 @@ ACellActor* UMapGrid2DComponent::GetActorAt(int32 X, int32 Y) const
 bool UMapGrid2DComponent::GetCell(int32 X, int32 Y, FMapCell& OutCell) const
 {
     return IsMapReady() ? MapInstance->GetCell(X, Y, OutCell) : false;
+}
+
+bool UMapGrid2DComponent::DamageObjectAt(int32 X, int32 Y, int32 Damage, bool& bOutDestroyed)
+{
+    bOutDestroyed = false;
+    if (!IsMapReady() || !MapInstance || Damage <= 0 || !IsInBounds(X, Y))
+    {
+        return false;
+    }
+
+    FGameplayTag Obj; int32 Dur = 0;
+    if (!MapInstance->GetObjectAt(X, Y, Obj, Dur))
+    {
+        return false; // no object to damage
+    }
+
+    int32 NewDur = Dur - Damage;
+    if (NewDur <= 0)
+    {
+        MapInstance->RemoveObjectAt(X, Y);
+        bOutDestroyed = true;
+    }
+    else
+    {
+        MapInstance->AddOrUpdateObjectAt(X, Y, Obj, NewDur);
+    }
+
+    // Prepare and broadcast update
+    FGridCellWithCoord Entry;
+    Entry.Coord = FIntPoint(X, Y);
+    MapInstance->GetCell(X, Y, Entry.Cell);
+    TArray<FGridCellWithCoord> Cells;
+    Cells.Add(Entry);
+    BroadcastCellsUpdated(Cells);
+    return true;
 }
 
 void UMapGrid2DComponent::InitializeAndBuild()
@@ -130,4 +167,13 @@ void UMapGrid2DComponent::SetZoneDepths(const TArray<int32>& Depths)
     {
         ZoneInfos[i].Depth = Depths[i];
     }
+}
+
+void UMapGrid2DComponent::BroadcastCellsUpdated(const TArray<FGridCellWithCoord>& Cells)
+{
+    if (Cells.Num() == 0) return;
+    FMapCellsUpdatedMessage Msg;
+    Msg.Source = this;
+    Msg.Cells = Cells;
+    UGameplayMessageSubsystem::Get(this).BroadcastMessage(TAG_Map_CellsUpdated, Msg);
 }

@@ -21,7 +21,7 @@ class UGridMovementComponent : public UPawnMovementComponent
     GENERATED_BODY()
 
 public:
-	UGridMovementComponent();
+    UGridMovementComponent();
 
 	/** Map provider (auto-found on BeginPlay if null). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Grid")
@@ -52,8 +52,16 @@ public:
 	float StopSpeedThreshold = 1.f;
 
 	/** Current planar velocity (XY). */
-	UPROPERTY(BlueprintReadOnly, Category="Movement")
-	FVector VelocityXY = FVector::ZeroVector;
+    UPROPERTY(BlueprintReadOnly, Category="Movement")
+    FVector VelocityXY = FVector::ZeroVector;
+
+    /** External block (e.g., digging) stops movement immediately. */
+    UPROPERTY(BlueprintReadOnly, Category="Movement")
+    bool bExternalMovementBlocked = false;
+
+    /** Set external movement block (true to block and zero velocity). */
+    UFUNCTION(BlueprintCallable, Category="Movement")
+    void SetExternalMovementBlocked(bool bBlocked) { bExternalMovementBlocked = bBlocked; if (bBlocked) { VelocityXY = FVector::ZeroVector; } }
 
 	/** Converts world location to float grid coords (center-of-cell at integers). */
 	UFUNCTION(BlueprintPure, Category="Grid|Helpers")

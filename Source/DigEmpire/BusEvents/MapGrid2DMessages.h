@@ -2,6 +2,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "DigEmpire/BusEvents/CharacterGridVisionMessages.h"
 #include "MapGrid2DMessages.generated.h"
 
 class UMapGrid2DComponent;
@@ -17,6 +18,21 @@ struct FMapReadyMessage
 	TObjectPtr<UMapGrid2DComponent> Source = nullptr;
 
 	/** Final map size. */
-	UPROPERTY(BlueprintReadOnly)
-	FIntPoint Size = FIntPoint::ZeroValue;
+    UPROPERTY(BlueprintReadOnly)
+    FIntPoint Size = FIntPoint::ZeroValue;
+};
+
+/** Payload for reporting updated cells (e.g., object damaged/removed). */
+USTRUCT(BlueprintType)
+struct FMapCellsUpdatedMessage
+{
+    GENERATED_BODY()
+
+    /** Component that owns the map (source of the update). */
+    UPROPERTY(BlueprintReadOnly)
+    TObjectPtr<UMapGrid2DComponent> Source = nullptr;
+
+    /** Updated cells with new data. */
+    UPROPERTY(BlueprintReadOnly)
+    TArray<FGridCellWithCoord> Cells;
 };
