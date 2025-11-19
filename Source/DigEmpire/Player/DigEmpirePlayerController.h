@@ -1,8 +1,9 @@
 #pragma once
 
+
 #include "CoreMinimal.h"
 #include "GameFramework/PlayerController.h"
-#include "DigEmpire/Player/DigEmpirePlayerController.generated.h"
+#include "DigEmpirePlayerController.generated.h"
 
 UCLASS()
 class ADigEmpirePlayerController : public APlayerController
@@ -11,4 +12,3 @@ class ADigEmpirePlayerController : public APlayerController
 public:
     ADigEmpirePlayerController();
 };
-

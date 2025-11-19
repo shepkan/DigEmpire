@@ -1,6 +1,6 @@
 #include "DigEmpire/Player/DigEmpirePlayerController.h"
 
-#include "DECheatManager.h"
+#include "DigEmpire/Cheats/DECheatManager.h"
 
 ADigEmpirePlayerController::ADigEmpirePlayerController()
 {
