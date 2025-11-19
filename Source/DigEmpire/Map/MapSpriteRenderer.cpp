@@ -30,7 +30,7 @@ AMapSpriteRenderer::AMapSpriteRenderer()
 void AMapSpriteRenderer::BeginPlay()
 {
     Super::BeginPlay();
-	
+    
     FirstSeenChannel = TAG_Character_Vision_FirstSeen;
 
     // Try to auto-pick a map component if none assigned (optional for event-driven)
@@ -41,6 +41,12 @@ void AMapSpriteRenderer::BeginPlay()
 
     // Subscribe to cells-updated to reflect object changes
     SetupCellsUpdatedSubscription();
+
+    // Pre-create atlas HISM if atlas mode is enabled
+    if (IsAtlasEnabled())
+    {
+        EnsureObjectAtlasHISM();
+    }
 }
 
 void AMapSpriteRenderer::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -124,13 +130,19 @@ void AMapSpriteRenderer::OnCellsFirstSeen(const FCellsFirstSeenMessage& Msg)
 
         if (Entry.Cell.HasObject())
         {
-            if (UTexture2D* ObjTex = TextureSet->FindObjectTexture(Entry.Cell.ObjectTag))
+            if (IsAtlasEnabled())
             {
-                if (auto* HISM = GetOrCreateHISMForTexture(ObjTex))
+                Atlas_AddOrUpdateObject(Entry);
+            }
+            else
+            {
+                if (UTexture2D* ObjTex = TextureSet->FindObjectTexture(Entry.Cell.ObjectTag))
                 {
-                    const int32 NewIndex = HISM->AddInstance(BuildInstanceTransform(X, Y, ObjectLayer));
-                    // Track object instance for future updates/removal
-                    ObjectInstances.FindOrAdd(Entry.Coord) = { HISM, NewIndex };
+                    if (auto* HISM = GetOrCreateHISMForTexture(ObjTex))
+                    {
+                        const int32 NewIndex = HISM->AddInstance(BuildInstanceTransform(X, Y, ObjectLayer));
+                        ObjectInstances.FindOrAdd(Entry.Coord) = { HISM, NewIndex };
+                    }
                 }
             }
         }
@@ -142,13 +154,27 @@ void AMapSpriteRenderer::OnCellsUpdated(const FMapCellsUpdatedMessage& Msg)
     if (!TextureSet) return;
     for (const FGridCellWithCoord& Entry : Msg.Cells)
     {
-        if (Entry.Cell.HasObject())
+        if (IsAtlasEnabled())
         {
-            AddOrUpdateObjectInstance(Entry);
+            if (Entry.Cell.HasObject())
+            {
+                Atlas_AddOrUpdateObject(Entry);
+            }
+            else
+            {
+                Atlas_RemoveObjectAt(Entry.Coord);
+            }
         }
         else
         {
-            RemoveObjectInstanceAt(Entry.Coord);
+            if (Entry.Cell.HasObject())
+            {
+                AddOrUpdateObjectInstance(Entry);
+            }
+            else
+            {
+                RemoveObjectInstanceAt(Entry.Coord);
+            }
         }
     }
 }
@@ -214,6 +240,101 @@ void AMapSpriteRenderer::RemoveObjectInstanceAt(const FIntPoint& CellCoord)
     Ref.Comp->RemoveInstance(Ref.Index);
 }
 
+void AMapSpriteRenderer::EnsureObjectAtlasHISM()
+{
+    if (ObjectAtlasHISM) return;
+    if (!TilePlaneMesh || !TileBaseMaterial || !ObjectAtlasTexture) return;
+
+    const FName CompName = TEXT("HISM_ObjectAtlas");
+    ObjectAtlasHISM = NewObject<UHierarchicalInstancedStaticMeshComponent>(this, CompName);
+    ObjectAtlasHISM->SetupAttachment(GetRootComponent());
+    ObjectAtlasHISM->SetStaticMesh(TilePlaneMesh);
+    ObjectAtlasHISM->SetMobility(EComponentMobility::Static);
+    ObjectAtlasHISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    ObjectAtlasHISM->SetCastShadow(false);
+    ObjectAtlasHISM->NumCustomDataFloats = 2; // 0: SpriteIndex, 1: Visible(0/1)
+
+    UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(TileBaseMaterial, this);
+    MID->SetTextureParameterValue(TextureParamName, ObjectAtlasTexture);
+    ObjectAtlasHISM->SetMaterial(0, MID);
+    ObjectAtlasHISM->RegisterComponent();
+}
+
+int32 AMapSpriteRenderer::GetObjectAtlasIndex(const FGameplayTag& Tag) const
+{
+    if (!Tag.IsValid()) return -1;
+    if (const int32* Found = ObjectAtlasIndices.Find(Tag))
+    {
+        return *Found;
+    }
+    return -1;
+}
+
+void AMapSpriteRenderer::Atlas_AddOrUpdateObject(const FGridCellWithCoord& Entry)
+{
+    EnsureObjectAtlasHISM();
+    if (!ObjectAtlasHISM) return;
+
+    const int32 AtlasSprite = GetObjectAtlasIndex(Entry.Cell.ObjectTag);
+    if (AtlasSprite < 0) return; // unmapped tag
+
+    // Existing instance?
+    if (int32* ExistingIndex = CellToAtlasIndex.Find(Entry.Coord))
+    {
+        const int32 Idx = *ExistingIndex;
+        // Update visibility and sprite index
+        ObjectAtlasHISM->SetCustomDataValue(Idx, 0, static_cast<float>(AtlasSprite), true);
+        ObjectAtlasHISM->SetCustomDataValue(Idx, 1, 1.f, true);
+        // Update transform in place (in case cell repositions)
+        const FTransform T = BuildInstanceTransform(Entry.Coord.X, Entry.Coord.Y, ObjectLayer);
+        ObjectAtlasHISM->UpdateInstanceTransform(Idx, T, true, true, true);
+        return;
+    }
+
+    // Allocate new or reuse from pool
+    int32 NewIndex = INDEX_NONE;
+    if (ObjectFreeSlots.Num() > 0)
+    {
+        NewIndex = ObjectFreeSlots.Pop(false);
+        // Reactivate: set transform to cell and mark visible
+        const FTransform T = BuildInstanceTransform(Entry.Coord.X, Entry.Coord.Y, ObjectLayer);
+        ObjectAtlasHISM->UpdateInstanceTransform(NewIndex, T, true, true, true);
+        ObjectAtlasHISM->SetCustomDataValue(NewIndex, 0, static_cast<float>(AtlasSprite), true);
+        ObjectAtlasHISM->SetCustomDataValue(NewIndex, 1, 1.f, true);
+    }
+    else
+    {
+        const FTransform T = BuildInstanceTransform(Entry.Coord.X, Entry.Coord.Y, ObjectLayer);
+        NewIndex = ObjectAtlasHISM->AddInstance(T);
+        ObjectAtlasHISM->SetCustomDataValue(NewIndex, 0, static_cast<float>(AtlasSprite), true);
+        ObjectAtlasHISM->SetCustomDataValue(NewIndex, 1, 1.f, true);
+    }
+
+    CellToAtlasIndex.Add(Entry.Coord, NewIndex);
+    AtlasIndexToCell.Add(NewIndex, Entry.Coord);
+}
+
+void AMapSpriteRenderer::Atlas_RemoveObjectAt(const FIntPoint& CellCoord)
+{
+    if (!ObjectAtlasHISM) return;
+    int32 Index;
+    if (!CellToAtlasIndex.RemoveAndCopyValue(CellCoord, Index))
+    {
+        return;
+    }
+    AtlasIndexToCell.Remove(Index);
+
+    // Deactivate in pool: hide offscreen and mark invisible
+    const FVector HiddenLoc(1.0e7f, 1.0e7f, -1.0e7f);
+    FTransform Hidden = FTransform::Identity;
+    Hidden.SetLocation(HiddenLoc);
+    Hidden.SetScale3D(FVector(0.001f));
+    ObjectAtlasHISM->UpdateInstanceTransform(Index, Hidden, true, true, true);
+    ObjectAtlasHISM->SetCustomDataValue(Index, 1, 0.f, true);
+
+    ObjectFreeSlots.Add(Index);
+}
+
 void AMapSpriteRenderer::ClearAll()
 {
     for (auto& Pair : TextureToHISM)
@@ -224,6 +345,17 @@ void AMapSpriteRenderer::ClearAll()
 		}
 	}
 	TextureToHISM.Empty();
+
+    ObjectInstances.Empty();
+
+    if (ObjectAtlasHISM)
+    {
+        ObjectAtlasHISM->DestroyComponent();
+        ObjectAtlasHISM = nullptr;
+    }
+    ObjectFreeSlots.Empty();
+    CellToAtlasIndex.Empty();
+    AtlasIndexToCell.Empty();
 }
 UHierarchicalInstancedStaticMeshComponent* AMapSpriteRenderer::GetOrCreateHISMForTexture(UTexture2D* Texture)
 {

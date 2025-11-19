@@ -106,6 +106,35 @@ private:
     UPROPERTY(Transient)
     TMap<FIntPoint, FInstanceRef> ObjectInstances;
 
+    // ===== Atlas + Pool path for object layer =====
+    /** If true, render object layer via a single atlas HISM with per-instance custom data. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Rendering|Atlas")
+    bool bUseObjectAtlas = false;
+
+    /** Texture atlas for objects. Must match TileBaseMaterial expectations. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Rendering|Atlas")
+    TObjectPtr<UTexture2D> ObjectAtlasTexture = nullptr;
+
+    /** GameplayTag -> SpriteIndex mapping in the atlas. Configure in editor. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Rendering|Atlas")
+    TMap<FGameplayTag, int32> ObjectAtlasIndices;
+
+    /** HISM used for atlas-based object rendering. */
+    UPROPERTY(Transient)
+    TObjectPtr<UHierarchicalInstancedStaticMeshComponent> ObjectAtlasHISM = nullptr;
+
+    /** Free slots pool for atlas HISM. */
+    UPROPERTY(Transient)
+    TArray<int32> ObjectFreeSlots;
+
+    /** Cell -> atlas index mapping. */
+    UPROPERTY(Transient)
+    TMap<FIntPoint, int32> CellToAtlasIndex;
+
+    /** Atlas index -> cell mapping. */
+    UPROPERTY(Transient)
+    TMap<int32, FIntPoint> AtlasIndexToCell;
+
 	/** Find or create a HISM for a given texture (creates a MID with that texture). */
 	UHierarchicalInstancedStaticMeshComponent* GetOrCreateHISMForTexture(UTexture2D* Texture);
 
@@ -133,4 +162,11 @@ private:
 
     /** Remove object instance for this cell if it exists. */
     void RemoveObjectInstanceAt(const FIntPoint& CellCoord);
+
+    // ===== Atlas helpers =====
+    bool IsAtlasEnabled() const { return bUseObjectAtlas && ObjectAtlasTexture != nullptr; }
+    void EnsureObjectAtlasHISM();
+    int32 GetObjectAtlasIndex(const FGameplayTag& Tag) const;
+    void Atlas_AddOrUpdateObject(const FGridCellWithCoord& Entry);
+    void Atlas_RemoveObjectAt(const FIntPoint& CellCoord);
 };
