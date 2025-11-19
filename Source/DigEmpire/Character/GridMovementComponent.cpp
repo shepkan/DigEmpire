@@ -297,17 +297,44 @@ void UGridMovementComponent::MoveToFirstFreeCell()
     }
 
     const FIntPoint Size = MapComponent->GetSize();
-    for (int32 y = 0; y < Size.Y; ++y)
+    // Prefer random free cell within zone(s) with depth == 0
+    TArray<FIntPoint> Candidates;
+    if (UMapGrid2D* Map = MapComponent->GetMap())
     {
-        for (int32 x = 0; x < Size.X; ++x)
+        for (int32 y = 0; y < Size.Y; ++y)
         {
-            if (!IsCellBlocked(x, y))
+            for (int32 x = 0; x < Size.X; ++x)
             {
-                const FVector TargetWorld = GridFloatToWorld(FVector2D(static_cast<float>(x), static_cast<float>(y)));
-                UpdatedComponent->SetWorldLocation(TargetWorld, false, nullptr, ETeleportType::TeleportPhysics);
-                return;
+                if (IsCellBlocked(x, y)) continue;
+                const int32 zoneId = Map->GetZoneAt(x, y);
+                if (MapComponent->GetZoneDepth(zoneId) == 0)
+                {
+                    Candidates.Add(FIntPoint(x, y));
+                }
             }
         }
     }
+    if (Candidates.Num() == 0)
+    {
+        // Fallback: any first free cell (legacy behavior)
+        for (int32 y = 0; y < Size.Y; ++y)
+        {
+            for (int32 x = 0; x < Size.X; ++x)
+            {
+                if (!IsCellBlocked(x, y))
+                {
+                    const FVector TargetWorld = GridFloatToWorld(FVector2D(static_cast<float>(x), static_cast<float>(y)));
+                    UpdatedComponent->SetWorldLocation(TargetWorld, false, nullptr, ETeleportType::TeleportPhysics);
+                    return;
+                }
+            }
+        }
+        return;
+    }
+
+    const int32 idx = FMath::RandRange(0, Candidates.Num() - 1);
+    const FIntPoint Chosen = Candidates[idx];
+    const FVector TargetWorld = GridFloatToWorld(FVector2D(static_cast<float>(Chosen.X), static_cast<float>(Chosen.Y)));
+    UpdatedComponent->SetWorldLocation(TargetWorld, false, nullptr, ETeleportType::TeleportPhysics);
 }
 

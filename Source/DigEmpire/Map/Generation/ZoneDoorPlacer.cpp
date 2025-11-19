@@ -164,6 +164,7 @@ bool UZoneDoorPlacer::FindFreeCellInZone(UMapGrid2D* Map, int32 ZoneId, /*out*/ 
 {
     if (!Map || ZoneId < 0) return false;
     const FIntPoint Size = Map->GetSize();
+    TArray<FIntPoint> Candidates;
     for (int32 y = 0; y < Size.Y; ++y)
     {
         for (int32 x = 0; x < Size.X; ++x)
@@ -172,9 +173,11 @@ bool UZoneDoorPlacer::FindFreeCellInZone(UMapGrid2D* Map, int32 ZoneId, /*out*/ 
             if (Map->GetActorAt(x, y)) continue;
             FGameplayTag T; int32 D;
             if (Map->GetObjectAt(x, y, T, D)) continue; // occupied by wall/object
-            OutCell = FIntPoint(x, y);
-            return true;
+            Candidates.Add(FIntPoint(x, y));
         }
     }
-    return false;
+    if (Candidates.Num() == 0) return false;
+    const int32 idx = FMath::RandRange(0, Candidates.Num() - 1);
+    OutCell = Candidates[idx];
+    return true;
 }
