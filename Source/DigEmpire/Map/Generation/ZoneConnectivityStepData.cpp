@@ -8,5 +8,6 @@ void UZoneConnectivityStepData::ExecuteGenerationStep(UMapGrid2D* Map, UWorld* /
     if (!Map) return;
     if (InOutZoneLabels.Num() <= 0) return;
     UZoneConnectivityFixer* Fixer = NewObject<UZoneConnectivityFixer>();
-    Fixer->Generate(Map, InOutZoneLabels, ImmutableObjectTags);
+    Fixer->Generate(Map, InOutZoneLabels, ImmutableObjectTags,
+                    bDebugDrawUnconnected, DebugTileSizeUU, DebugZOffset, DebugSphereRadiusUU, DebugLifetime);
 }

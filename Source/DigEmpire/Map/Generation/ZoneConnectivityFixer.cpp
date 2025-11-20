@@ -1,9 +1,15 @@
 #include "ZoneConnectivityFixer.h"
 #include "DigEmpire/Map/MapGrid2D.h"
+#include "DrawDebugHelpers.h"
 
 bool UZoneConnectivityFixer::Generate(UMapGrid2D* MapGrid,
                                       const TArray<int32>& ZoneLabels,
-                                      const TArray<FGameplayTag>& ImmutableObjectTags)
+                                      const TArray<FGameplayTag>& ImmutableObjectTags,
+                                      bool bDebugDraw,
+                                      float DebugTileSizeUU,
+                                      float DebugZOffset,
+                                      float DebugSphereRadiusUU,
+                                      float DebugLifetime)
 {
     if (!MapGrid) return false;
     const FIntPoint Size = MapGrid->GetSize();
@@ -23,6 +29,7 @@ bool UZoneConnectivityFixer::Generate(UMapGrid2D* MapGrid,
     TArray<int32> Comp; Comp.Init(-1, W*H);
     TArray<FNode> Q; Q.Reserve(W*H);
 
+    UWorld* World = MapGrid->GetWorld();
     for (int32 ZoneId = 0; ZoneId <= MaxZoneId; ++ZoneId)
     {
         // Build masks for this zone
@@ -149,7 +156,23 @@ bool UZoneConnectivityFixer::Generate(UMapGrid2D* MapGrid,
             remaining = 0; for (int i=0;i<compCount;++i) if (!compConnected[i]) ++remaining;
         }
 
-        // debug visualization removed
+        // Debug draw all open cells that remain in unconnected components
+        if (bDebugDraw && World)
+        {
+            for (int32 y = 0; y < H; ++y)
+            for (int32 x = 0; x < W; ++x)
+            {
+                const int id = Idx(x, y, W);
+                if (ZoneLabels[id] != ZoneId) continue;
+                if (!Open[id]) continue;
+                const int c = Comp[id];
+                if (c >= 0 && !compConnected.IsValidIndex(c) ? true : !compConnected[c])
+                {
+                    const FVector P(x * DebugTileSizeUU, y * DebugTileSizeUU, DebugZOffset);
+                    DrawDebugSphere(World, P, DebugSphereRadiusUU, 12, FColor::Red, DebugLifetime <= 0.f, DebugLifetime);
+                }
+            }
+        }
     }
 
     return true;

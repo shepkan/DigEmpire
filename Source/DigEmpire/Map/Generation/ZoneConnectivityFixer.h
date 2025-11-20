@@ -25,7 +25,12 @@ class UZoneConnectivityFixer : public UObject
     UFUNCTION(BlueprintCallable, Category="Zones")
     bool Generate(UMapGrid2D* MapGrid,
                   const TArray<int32>& ZoneLabels,
-                  const TArray<FGameplayTag>& ImmutableObjectTags);
+                  const TArray<FGameplayTag>& ImmutableObjectTags,
+                  bool bDebugDraw,
+                  float DebugTileSizeUU,
+                  float DebugZOffset,
+                  float DebugSphereRadiusUU,
+                  float DebugLifetime);
 
 private:
     static int32 Idx(int32 X, int32 Y, int32 W) { return X + Y * W; }
