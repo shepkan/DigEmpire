@@ -8,6 +8,9 @@
 class UMapGrid2DComponent;
 class UGridMovementComponent;
 
+// Fired when a dig tick lands a hit on a cell. Provides world hit position (cell center).
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FDigHitSignature, FVector, HitWorldPosition);
+
 UENUM(BlueprintType)
 enum class EDigDirection : uint8
 {
@@ -37,9 +40,9 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Dig")
     TObjectPtr<UGridMovementComponent> MovementComponent = nullptr;
 
-    /** World size of one grid cell (read-only; shared project constant). */
+    /** World size of one grid cell used for grid math (read-only; shared project constant). */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Dig", meta=(ClampMin="1"))
-    float TileSize = 100.f; // Will be overridden from constants if available
+    float TileSize = 100.f; // Overridden from constants if available
 
     /** How often to apply dig damage (seconds). */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Dig", meta=(ClampMin="0.01"))
@@ -48,6 +51,14 @@ public:
     /** Damage applied per tick to the object in target cell. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Dig", meta=(ClampMin="1"))
     int32 DamagePerTick = 10;
+
+    /** Custom hit offset distance (uu) added from owner in dig direction. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Dig", meta=(ClampMin="0.0"))
+    float HitOffsetUU = 40.f;
+
+    /** Event: broadcast when a dig successfully hits an object; provides world hit position. */
+    UPROPERTY(BlueprintAssignable, Category="Dig|Events")
+    FDigHitSignature OnDigHit;
 
     /** Start digging upwards (Y+1). */
     UFUNCTION(BlueprintCallable, Category="Dig")
@@ -95,4 +106,3 @@ private:
     /** Convert owner world location to grid float coords. */
     FVector2D WorldToGridFloat(const FVector& WorldLocation) const;
 };
-

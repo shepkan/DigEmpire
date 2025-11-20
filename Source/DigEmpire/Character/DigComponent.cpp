@@ -138,8 +138,20 @@ void UDigComponent::DoDigTick()
         return; // nothing to dig out of bounds
     }
 
-    // Damage object if present
+    // Compute original hit position: owner location + custom offset in dig direction
+    FVector HitWorld = OwnerWorld;
+    switch (CurrentDirection)
+    {
+        case EDigDirection::Up:    HitWorld.Y += HitOffsetUU; break;
+        case EDigDirection::Down:  HitWorld.Y -= HitOffsetUU; break;
+        case EDigDirection::Left:  HitWorld.X -= HitOffsetUU; break;
+        case EDigDirection::Right: HitWorld.X += HitOffsetUU; break;
+    }
+
+    // Apply damage if any object exists (best-effort)
     bool bDestroyed = false;
     MapComponent->DamageObjectAt(GX, GY, DamagePerTick, bDestroyed);
-}
 
+    // Always broadcast the hit event, even if no object was present
+    OnDigHit.Broadcast(HitWorld);
+}

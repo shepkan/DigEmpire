@@ -46,7 +46,7 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Map|Events")
     FGameplayTag FirstSeenChannel;
 
-	/** Data asset with textures for background/object tags. */
+	/** Data asset with textures for backgrGound/object tags. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Rendering")
 	TObjectPtr<UTileTextureSet> TextureSet = nullptr;
 
