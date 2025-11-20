@@ -130,6 +130,11 @@ void AMapSpriteRenderer::OnCellsFirstSeen(const FCellsFirstSeenMessage& Msg)
 
         if (Entry.Cell.HasObject())
         {
+            // Cache initial durability for damage-decal computation
+            if (!InitialObjectDurability.Contains(Entry.Coord))
+            {
+                InitialObjectDurability.Add(Entry.Coord, Entry.Cell.ObjectDurability);
+            }
             if (IsAtlasEnabled())
             {
                 Atlas_AddOrUpdateObject(Entry);
@@ -154,6 +159,19 @@ void AMapSpriteRenderer::OnCellsUpdated(const FMapCellsUpdatedMessage& Msg)
     if (!TextureSet) return;
     for (const FGridCellWithCoord& Entry : Msg.Cells)
     {
+        // Maintain initial durability cache for damage-decal computation
+        if (Entry.Cell.HasObject())
+        {
+            int32* InitPtr = InitialObjectDurability.Find(Entry.Coord);
+            if (!InitPtr || Entry.Cell.ObjectDurability > *InitPtr || *InitPtr <= 0)
+            {
+                InitialObjectDurability.Add(Entry.Coord, Entry.Cell.ObjectDurability);
+            }
+        }
+        else
+        {
+            InitialObjectDurability.Remove(Entry.Coord);
+        }
         if (IsAtlasEnabled())
         {
             if (Entry.Cell.HasObject())
@@ -252,7 +270,8 @@ void AMapSpriteRenderer::EnsureObjectAtlasHISM()
     ObjectAtlasHISM->SetMobility(EComponentMobility::Static);
     ObjectAtlasHISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     ObjectAtlasHISM->SetCastShadow(false);
-    ObjectAtlasHISM->NumCustomDataFloats = 2; // 0: SpriteIndex, 1: Visible(0/1)
+    // PerInstanceCustomData: 0 SpriteIndex, 1 OreIndex, 2 DamageDecal
+    ObjectAtlasHISM->NumCustomDataFloats = 3;
 
     UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(TileBaseMaterial, this);
     MID->SetTextureParameterValue(TextureParamName, ObjectAtlasTexture);
@@ -270,6 +289,38 @@ int32 AMapSpriteRenderer::GetObjectAtlasIndex(const FGameplayTag& Tag) const
     return -1;
 }
 
+int32 AMapSpriteRenderer::GetOreIndex(const FGameplayTag& Tag) const
+{
+    if (!Tag.IsValid()) return 0;
+    if (const int32* Found = ObjectOreIndices.Find(Tag))
+    {
+        return *Found;
+    }
+    return 0;
+}
+
+int32 AMapSpriteRenderer::ComputeDamageDecalIndex(const FIntPoint& Cell, int32 CurrentDurability) const
+{
+    const int32* InitPtr = InitialObjectDurability.Find(Cell);
+    if (!InitPtr || *InitPtr <= 0)
+    {
+        return 0;
+    }
+    const int32 Init = *InitPtr;
+    const int32 DamageTaken = FMath::Max(0, Init - CurrentDurability);
+    const float DamagePercent = (Init > 0) ? (static_cast<float>(DamageTaken) / static_cast<float>(Init)) * 100.f : 0.f;
+
+    int32 Stage = 0;
+    for (float Th : DamageDecalThresholdsPercent)
+    {
+        if (DamagePercent >= Th)
+        {
+            ++Stage;
+        }
+    }
+    return Stage;
+}
+
 void AMapSpriteRenderer::Atlas_AddOrUpdateObject(const FGridCellWithCoord& Entry)
 {
     EnsureObjectAtlasHISM();
@@ -277,14 +328,17 @@ void AMapSpriteRenderer::Atlas_AddOrUpdateObject(const FGridCellWithCoord& Entry
 
     const int32 AtlasSprite = GetObjectAtlasIndex(Entry.Cell.ObjectTag);
     if (AtlasSprite < 0) return; // unmapped tag
+    const int32 OreIdx = GetOreIndex(Entry.Cell.ObjectTag);
+    const int32 DamageIdx = ComputeDamageDecalIndex(Entry.Coord, Entry.Cell.ObjectDurability);
 
     // Existing instance?
     if (int32* ExistingIndex = CellToAtlasIndex.Find(Entry.Coord))
     {
         const int32 Idx = *ExistingIndex;
-        // Update visibility and sprite index
+        // Update custom data (sprite, ore, damage decal)
         ObjectAtlasHISM->SetCustomDataValue(Idx, 0, static_cast<float>(AtlasSprite), true);
-        ObjectAtlasHISM->SetCustomDataValue(Idx, 1, 1.f, true);
+        ObjectAtlasHISM->SetCustomDataValue(Idx, 1, static_cast<float>(OreIdx), true);
+        ObjectAtlasHISM->SetCustomDataValue(Idx, 2, static_cast<float>(DamageIdx), true);
         // Update transform in place (in case cell repositions)
         const FTransform T = BuildInstanceTransform(Entry.Coord.X, Entry.Coord.Y, ObjectLayer);
         ObjectAtlasHISM->UpdateInstanceTransform(Idx, T, true, true, true);
@@ -300,14 +354,16 @@ void AMapSpriteRenderer::Atlas_AddOrUpdateObject(const FGridCellWithCoord& Entry
         const FTransform T = BuildInstanceTransform(Entry.Coord.X, Entry.Coord.Y, ObjectLayer);
         ObjectAtlasHISM->UpdateInstanceTransform(NewIndex, T, true, true, true);
         ObjectAtlasHISM->SetCustomDataValue(NewIndex, 0, static_cast<float>(AtlasSprite), true);
-        ObjectAtlasHISM->SetCustomDataValue(NewIndex, 1, 1.f, true);
+        ObjectAtlasHISM->SetCustomDataValue(NewIndex, 1, static_cast<float>(OreIdx), true);
+        ObjectAtlasHISM->SetCustomDataValue(NewIndex, 2, static_cast<float>(DamageIdx), true);
     }
     else
     {
         const FTransform T = BuildInstanceTransform(Entry.Coord.X, Entry.Coord.Y, ObjectLayer);
         NewIndex = ObjectAtlasHISM->AddInstance(T);
         ObjectAtlasHISM->SetCustomDataValue(NewIndex, 0, static_cast<float>(AtlasSprite), true);
-        ObjectAtlasHISM->SetCustomDataValue(NewIndex, 1, 1.f, true);
+        ObjectAtlasHISM->SetCustomDataValue(NewIndex, 1, static_cast<float>(OreIdx), true);
+        ObjectAtlasHISM->SetCustomDataValue(NewIndex, 2, static_cast<float>(DamageIdx), true);
     }
 
     CellToAtlasIndex.Add(Entry.Coord, NewIndex);
@@ -324,13 +380,14 @@ void AMapSpriteRenderer::Atlas_RemoveObjectAt(const FIntPoint& CellCoord)
     }
     AtlasIndexToCell.Remove(Index);
 
-    // Deactivate in pool: hide offscreen and mark invisible
+    // Deactivate in pool: hide offscreen
     const FVector HiddenLoc(1.0e7f, 1.0e7f, -1.0e7f);
     FTransform Hidden = FTransform::Identity;
     Hidden.SetLocation(HiddenLoc);
     Hidden.SetScale3D(FVector(0.001f));
     ObjectAtlasHISM->UpdateInstanceTransform(Index, Hidden, true, true, true);
-    ObjectAtlasHISM->SetCustomDataValue(Index, 1, 0.f, true);
+    // Clear cached durability for this cell
+    InitialObjectDurability.Remove(CellCoord);
 
     ObjectFreeSlots.Add(Index);
 }

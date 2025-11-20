@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "DigEmpire/Map/Generation/MapGenerationStepDataBase.h"
+#include "GameplayTagContainer.h"
 #include "RoomGenSettings.generated.h"
 
 /** Desired room specification. */
@@ -42,9 +43,13 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Random")
     int32 RandomSeed = -1;
 
-    /** Border settings providing wall tag/durability for room walls. */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Rooms")
-    TObjectPtr<class UZoneBorderSettings> BorderSettings;
+    /** Tag for walls built around rooms. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Rooms|Walls")
+    FGameplayTag RoomWallObjectTag;
+
+    /** Durability for room walls. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Rooms|Walls", meta=(ClampMin="1"))
+    int32 RoomWallDurability = 100;
 
     // Execute step: run room generator
     virtual void ExecuteGenerationStep(UMapGrid2D* Map, UWorld* World, TArray<int32>& InOutZoneLabels) const override;

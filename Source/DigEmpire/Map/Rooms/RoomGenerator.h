@@ -20,8 +20,7 @@ public:
     UFUNCTION(BlueprintCallable, Category="Rooms")
     bool Generate(UMapGrid2D* MapGrid,
                   const TArray<int32>& ZoneLabels,
-                  const URoomGenSettings* Settings,
-                  const UZoneBorderSettings* BorderSettings);
+                  const URoomGenSettings* Settings);
 
 private:
     static int32 Idx(int32 X, int32 Y, int32 W) { return X + Y * W; }
@@ -31,7 +30,8 @@ private:
                             int32 RoomW,
                             int32 RoomH,
                             const TArray<int32>& Labels,
-                            const UZoneBorderSettings* BorderSettings,
+                            const FGameplayTag& WallTag,
+                            int32 WallHP,
                             int32 MaxAttempts,
                             FRandomStream& RNG);
 };

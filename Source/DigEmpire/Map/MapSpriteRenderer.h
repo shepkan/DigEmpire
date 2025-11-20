@@ -119,6 +119,14 @@ private:
     UPROPERTY(EditAnywhere, Category="Rendering|Atlas")
     TMap<FGameplayTag, int32> ObjectAtlasIndices;
 
+    /** GameplayTag -> OreIndex mapping (used by material via PerInstanceCustomData[1]). */
+    UPROPERTY(EditAnywhere, Category="Rendering|Atlas")
+    TMap<FGameplayTag, int32> ObjectOreIndices;
+
+    /** Damage thresholds in percent of initial HP at which DamageDecal stage increases (PerInstanceCustomData[2]). */
+    UPROPERTY(EditAnywhere, Category="Rendering|Damage", meta=(ClampMin="0.0", ClampMax="100.0"))
+    TArray<float> DamageDecalThresholdsPercent;
+
     /** HISM used for atlas-based object rendering. */
     UPROPERTY(Transient)
     TObjectPtr<UHierarchicalInstancedStaticMeshComponent> ObjectAtlasHISM = nullptr;
@@ -134,6 +142,10 @@ private:
     /** Atlas index -> cell mapping. */
     UPROPERTY(Transient)
     TMap<int32, FIntPoint> AtlasIndexToCell;
+
+    /** Cache of initial object durability per cell for damage % calculations. */
+    UPROPERTY(Transient)
+    TMap<FIntPoint, int32> InitialObjectDurability;
 
 	/** Find or create a HISM for a given texture (creates a MID with that texture). */
 	UHierarchicalInstancedStaticMeshComponent* GetOrCreateHISMForTexture(UTexture2D* Texture);
@@ -169,4 +181,10 @@ private:
     int32 GetObjectAtlasIndex(const FGameplayTag& Tag) const;
     void Atlas_AddOrUpdateObject(const FGridCellWithCoord& Entry);
     void Atlas_RemoveObjectAt(const FIntPoint& CellCoord);
+
+    /** Resolve Ore index for a given object tag (0 if unmapped). */
+    int32 GetOreIndex(const FGameplayTag& Tag) const;
+
+    /** Compute current DamageDecal stage based on thresholds and cached initial durability. */
+    int32 ComputeDamageDecalIndex(const FIntPoint& Cell, int32 CurrentDurability) const;
 };

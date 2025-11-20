@@ -1,14 +1,13 @@
 #include "RoomGenerator.h"
 #include "DigEmpire/Map/MapGrid2D.h"
 #include "RoomTypes.h"
-#include "DigEmpire/Map/Generation/ZoneBorderSettings.h"
+// No longer depends on ZoneBorderSettings
 
 bool URoomGenerator::Generate(UMapGrid2D* MapGrid,
                               const TArray<int32>& ZoneLabels,
-                              const URoomGenSettings* Settings,
-                              const UZoneBorderSettings* BorderSettings)
+                              const URoomGenSettings* Settings)
 {
-    if (!MapGrid || !Settings || !BorderSettings) return false;
+    if (!MapGrid || !Settings) return false;
     const FIntPoint Size = MapGrid->GetSize();
     const int32 W = Size.X, H = Size.Y;
     if (W <= 0 || H <= 0) return false;
@@ -19,6 +18,8 @@ bool URoomGenerator::Generate(UMapGrid2D* MapGrid,
     const int32 MaxAttempts = Settings->MaxPlacementAttempts;
 
     bool bAnyPlaced = false;
+    const FGameplayTag WallTag = Settings->RoomWallObjectTag;
+    const int32 WallHP = Settings->RoomWallDurability;
     for (const FRoomSpec& Spec : Settings->Rooms)
     {
         int32 TargetZone = Spec.ZoneId;
@@ -35,13 +36,13 @@ bool URoomGenerator::Generate(UMapGrid2D* MapGrid,
             bool bPlaced = false;
             for (int32 z : Zones)
             {
-                bPlaced = TryPlaceRoomInZone(MapGrid, Size, z, Spec.Width, Spec.Height, ZoneLabels, BorderSettings, MaxAttempts, RNG);
+                bPlaced = TryPlaceRoomInZone(MapGrid, Size, z, Spec.Width, Spec.Height, ZoneLabels, WallTag, WallHP, MaxAttempts, RNG);
                 if (bPlaced) { bAnyPlaced = true; break; }
             }
             continue; // move to next room spec
         }
 
-        if (TryPlaceRoomInZone(MapGrid, Size, TargetZone, Spec.Width, Spec.Height, ZoneLabels, BorderSettings, MaxAttempts, RNG))
+        if (TryPlaceRoomInZone(MapGrid, Size, TargetZone, Spec.Width, Spec.Height, ZoneLabels, WallTag, WallHP, MaxAttempts, RNG))
         {
             bAnyPlaced = true;
         }
@@ -56,7 +57,8 @@ bool URoomGenerator::TryPlaceRoomInZone(UMapGrid2D* Map,
                                         int32 RoomW,
                                         int32 RoomH,
                                         const TArray<int32>& Labels,
-                                        const UZoneBorderSettings* BorderSettings,
+                                        const FGameplayTag& WallTag,
+                                        int32 WallHP,
                                         int32 MaxAttempts,
                                         FRandomStream& RNG)
 {
@@ -196,8 +198,6 @@ bool URoomGenerator::TryPlaceRoomInZone(UMapGrid2D* Map,
             if (entranceX < 0) return false;
 
             // Build walls along the rectangle border, skipping the entrance cell.
-            const FGameplayTag WallTag = BorderSettings->WallObjectTag;
-            const int32 WallHP = BorderSettings->WallDurability;
 
             // Top and bottom rows
             for (int32 dx = 0; dx < RoomW; ++dx)

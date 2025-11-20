@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "DigEmpire/Map/Generation/MapGenerationStepDataBase.h"
+#include "GameplayTagContainer.h"
 #include "CaveGenSettings.generated.h"
 
 /** Settings for per-zone cellular automata cave generation. */
@@ -31,9 +32,17 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Cave|Random")
     int32 RandomSeed = -1;
 
-    /** Border settings reference for wall tags/durability. */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Cave")
-    TObjectPtr<class UZoneBorderSettings> BorderSettings;
+    /** Tag to place for cave walls produced by CA. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Cave|Walls")
+    FGameplayTag WallObjectTag;
+
+    /** Durability to place for cave walls. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Cave|Walls", meta=(ClampMin="1"))
+    int32 WallDurability = 100;
+
+    /** Tags treated as immutable walls when building CA masks (not modified by CA). */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Cave|Masks")
+    TArray<FGameplayTag> ImmutableObjectTags;
 
     // Execute step: run cave CA per zone
     virtual void ExecuteGenerationStep(UMapGrid2D* Map, UWorld* World, TArray<int32>& InOutZoneLabels) const override;

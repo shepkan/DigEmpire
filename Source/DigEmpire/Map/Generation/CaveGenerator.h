@@ -3,7 +3,6 @@
 #include "CoreMinimal.h"
 #include "UObject/Object.h"
 #include "CaveGenSettings.h"
-#include "ZoneBorderSettings.h"
 #include "CaveGenerator.generated.h"
 
 class UMapGrid2D;
@@ -18,8 +17,7 @@ public:
     UFUNCTION(BlueprintCallable, Category="Cave")
     bool Generate(UMapGrid2D* MapGrid,
                   const TArray<int32>& ZoneLabels,
-                  const UCaveGenSettings* Settings,
-                  const UZoneBorderSettings* BorderSettings);
+                  const UCaveGenSettings* Settings);
 
 private:
     static int32 Idx(int32 X, int32 Y, int32 W) { return X + Y * W; }
@@ -27,7 +25,7 @@ private:
     void BuildZoneMasks(UMapGrid2D* Map,
                         const TArray<int32>& Labels,
                         int32 ZoneId,
-                        const UZoneBorderSettings* BorderSettings,
+                        const UCaveGenSettings* Settings,
                         /*out*/ TArray<int8>& FixedState, // -1 mutable, 0 immutable empty, 1 immutable wall
                         /*out*/ TArray<uint8>& Cur);
 

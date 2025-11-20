@@ -3,10 +3,9 @@
 
 bool UCaveGenerator::Generate(UMapGrid2D* MapGrid,
                               const TArray<int32>& ZoneLabels,
-                              const UCaveGenSettings* Settings,
-                              const UZoneBorderSettings* BorderSettings)
+                              const UCaveGenSettings* Settings)
 {
-    if (!MapGrid || !Settings || !BorderSettings) return false;
+    if (!MapGrid || !Settings) return false;
     const FIntPoint Size = MapGrid->GetSize();
     const int32 W = Size.X, H = Size.Y;
     if (W <= 0 || H <= 0) return false;
@@ -25,7 +24,7 @@ bool UCaveGenerator::Generate(UMapGrid2D* MapGrid,
     for (int32 ZoneId = 0; ZoneId <= MaxZoneId; ++ZoneId)
     {
         // Build masks and initial state for this zone
-        BuildZoneMasks(MapGrid, ZoneLabels, ZoneId, BorderSettings, FixedState, Cur);
+        BuildZoneMasks(MapGrid, ZoneLabels, ZoneId, Settings, FixedState, Cur);
 
         // Randomize mutable cells using FillChance
         for (int32 y = 0; y < H; ++y)
@@ -84,7 +83,7 @@ bool UCaveGenerator::Generate(UMapGrid2D* MapGrid,
 
             if (Cur[id] == 1)
             {
-                MapGrid->AddOrUpdateObjectAt(x, y, BorderSettings->WallObjectTag, BorderSettings->WallDurability);
+                MapGrid->AddOrUpdateObjectAt(x, y, Settings->WallObjectTag, Settings->WallDurability);
             }
             else
             {
@@ -99,7 +98,7 @@ bool UCaveGenerator::Generate(UMapGrid2D* MapGrid,
 void UCaveGenerator::BuildZoneMasks(UMapGrid2D* Map,
                                     const TArray<int32>& Labels,
                                     int32 ZoneId,
-                                    const UZoneBorderSettings* BorderSettings,
+                                    const UCaveGenSettings* Settings,
                                     TArray<int8>& FixedState,
                                     TArray<uint8>& Cur)
 {
@@ -133,8 +132,8 @@ void UCaveGenerator::BuildZoneMasks(UMapGrid2D* Map,
             const int32 xb = x0 + dx;
             const int32 yb = y0 + h - 1;
             FGameplayTag T; int32 D;
-            if (Map->GetObjectAt(xt, yt, T, D) && T == BorderSettings->WallObjectTag) RoomWallCells.Add(FIntPoint(xt, yt));
-            if (Map->GetObjectAt(xb, yb, T, D) && T == BorderSettings->WallObjectTag) RoomWallCells.Add(FIntPoint(xb, yb));
+            if (Map->GetObjectAt(xt, yt, T, D) && Settings->ImmutableObjectTags.Contains(T)) RoomWallCells.Add(FIntPoint(xt, yt));
+            if (Map->GetObjectAt(xb, yb, T, D) && Settings->ImmutableObjectTags.Contains(T)) RoomWallCells.Add(FIntPoint(xb, yb));
         }
         // Left and right edges (skip corners)
         for (int32 dy2 = 1; dy2 < h - 1; ++dy2)
@@ -144,8 +143,8 @@ void UCaveGenerator::BuildZoneMasks(UMapGrid2D* Map,
             const int32 xr = x0 + w - 1;
             const int32 yr = y0 + dy2;
             FGameplayTag T; int32 D;
-            if (Map->GetObjectAt(xl, yl, T, D) && T == BorderSettings->WallObjectTag) RoomWallCells.Add(FIntPoint(xl, yl));
-            if (Map->GetObjectAt(xr, yr, T, D) && T == BorderSettings->WallObjectTag) RoomWallCells.Add(FIntPoint(xr, yr));
+            if (Map->GetObjectAt(xl, yl, T, D) && Settings->ImmutableObjectTags.Contains(T)) RoomWallCells.Add(FIntPoint(xl, yl));
+            if (Map->GetObjectAt(xr, yr, T, D) && Settings->ImmutableObjectTags.Contains(T)) RoomWallCells.Add(FIntPoint(xr, yr));
         }
     }
     for (const FZonePassage& P : Passages)
@@ -180,7 +179,7 @@ void UCaveGenerator::BuildZoneMasks(UMapGrid2D* Map,
         // Check if there is a wall object here
         FGameplayTag ObjTag; int32 Dur = 0;
         const bool bHasObj = Map->GetObjectAt(x, y, ObjTag, Dur);
-        if (bHasObj && ObjTag == BorderSettings->WallObjectTag)
+        if (bHasObj && Settings->ImmutableObjectTags.Contains(ObjTag))
         {
             FixedState[id] = 1; // immutable wall
             Cur[id] = 1;

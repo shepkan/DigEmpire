@@ -3,9 +3,9 @@
 
 bool UZoneConnectivityFixer::Generate(UMapGrid2D* MapGrid,
                                       const TArray<int32>& ZoneLabels,
-                                      const UZoneBorderSettings* BorderSettings)
+                                      const TArray<FGameplayTag>& ImmutableObjectTags)
 {
-    if (!MapGrid || !BorderSettings) return false;
+    if (!MapGrid) return false;
     const FIntPoint Size = MapGrid->GetSize();
     const int32 W = Size.X, H = Size.Y;
     if (W <= 0 || H <= 0) return false;
@@ -27,7 +27,7 @@ bool UZoneConnectivityFixer::Generate(UMapGrid2D* MapGrid,
     {
         // Build masks for this zone
         Open.Init(0, W*H); ImmWall.Init(0, W*H); MutWall.Init(0, W*H); Comp.Init(-1, W*H);
-        BuildMasksForZone(MapGrid, ZoneLabels, ZoneId, BorderSettings, Open, ImmWall, MutWall);
+        BuildMasksForZone(MapGrid, ZoneLabels, ZoneId, ImmutableObjectTags, Open, ImmWall, MutWall);
 
         // Label connected components among open cells (4-neighbors)
         int32 compCount = 0;
@@ -217,7 +217,7 @@ bool UZoneConnectivityFixer::IsZoneConnected(const UMapGrid2D* MapGrid,
 void UZoneConnectivityFixer::BuildMasksForZone(UMapGrid2D* Map,
                                                const TArray<int32>& Labels,
                                                int32 ZoneId,
-                                               const UZoneBorderSettings* BorderSettings,
+                                               const TArray<FGameplayTag>& ImmutableObjectTags,
                                                TArray<uint8>& Open,
                                                TArray<uint8>& ImmWall,
                                                TArray<uint8>& MutWall)
@@ -294,7 +294,7 @@ void UZoneConnectivityFixer::BuildMasksForZone(UMapGrid2D* Map,
 
         // Object check
         FGameplayTag Obj; int32 Dur=0; const bool bHasObj = Map->GetObjectAt(x,y,Obj,Dur);
-        if (bHasObj && Obj == BorderSettings->WallObjectTag)
+        if (bHasObj && ImmutableObjectTags.Contains(Obj))
         {
             // Check zone-boundary adjacency (wall between zones) -> immutable
             bool bBetweenZones = false;
