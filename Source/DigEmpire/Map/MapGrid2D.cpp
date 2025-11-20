@@ -16,6 +16,7 @@ void UMapGrid2D::Initialize(int32 InSizeX, int32 InSizeY)
         Cell.ObjectTag = FGameplayTag();     // empty
         Cell.ObjectDurability = 0;
         Cell.bVieved = false;
+        Cell.OreTag = FGameplayTag();        // empty
         Cell.Occupant = nullptr;
         // ZoneId defaults from struct initializer
     }
@@ -75,6 +76,21 @@ bool UMapGrid2D::GetObjectAt(int32 X, int32 Y, FGameplayTag& OutObjectTag, int32
 
     OutObjectTag = Cell.ObjectTag;
     OutDurability = Cell.ObjectDurability;
+    return true;
+}
+
+bool UMapGrid2D::SetOreAt(int32 X, int32 Y, const FGameplayTag& InOreTag)
+{
+    if (!IsInBounds(X, Y)) return false;
+    FMapCell& Cell = Cells[Index(X, Y)];
+    Cell.OreTag = InOreTag;
+    return true;
+}
+
+bool UMapGrid2D::GetOreAt(int32 X, int32 Y, FGameplayTag& OutOreTag) const
+{
+    if (!IsInBounds(X, Y)) return false;
+    OutOreTag = Cells[Index(X, Y)].OreTag;
     return true;
 }
 

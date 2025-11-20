@@ -64,6 +64,16 @@ bool UMapGrid2DComponent::GetCell(int32 X, int32 Y, FMapCell& OutCell) const
     return IsMapReady() ? MapInstance->GetCell(X, Y, OutCell) : false;
 }
 
+bool UMapGrid2DComponent::SetOreAt(int32 X, int32 Y, const FGameplayTag& InOreTag)
+{
+    return IsMapReady() ? MapInstance->SetOreAt(X, Y, InOreTag) : false;
+}
+
+bool UMapGrid2DComponent::GetOreAt(int32 X, int32 Y, FGameplayTag& OutOreTag) const
+{
+    return IsMapReady() ? MapInstance->GetOreAt(X, Y, OutOreTag) : false;
+}
+
 bool UMapGrid2DComponent::DamageObjectAt(int32 X, int32 Y, int32 Damage, bool& bOutDestroyed)
 {
     bOutDestroyed = false;

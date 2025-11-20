@@ -98,6 +98,13 @@ public:
     UFUNCTION(BlueprintPure, Category="MapGrid|Access")
     bool GetCell(int32 X, int32 Y, struct FMapCell& OutCell) const;
 
+    // Ore API
+    UFUNCTION(BlueprintCallable, Category="MapGrid|Ore")
+    bool SetOreAt(int32 X, int32 Y, const FGameplayTag& InOreTag);
+
+    UFUNCTION(BlueprintPure, Category="MapGrid|Ore")
+    bool GetOreAt(int32 X, int32 Y, FGameplayTag& OutOreTag) const;
+
     /** Damage object at cell by Damage; broadcasts cell update; returns true if there was an object. */
     UFUNCTION(BlueprintCallable, Category="MapGrid|Access")
     bool DamageObjectAt(int32 X, int32 Y, int32 Damage, bool& bOutDestroyed);

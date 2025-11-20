@@ -329,7 +329,7 @@ void AMapSpriteRenderer::Atlas_AddOrUpdateObject(const FGridCellWithCoord& Entry
 
     const int32 AtlasSprite = GetObjectAtlasIndex(Entry.Cell.ObjectTag);
     if (AtlasSprite < 0) return; // unmapped tag
-    const int32 OreIdx = GetOreIndex(Entry.Cell.ObjectTag);
+    const int32 OreIdx = GetOreIndex(Entry.Cell.OreTag);
     const int32 DamageIdx = ComputeDamageDecalIndex(Entry.Coord, Entry.Cell.ObjectDurability);
 
     // Existing instance?

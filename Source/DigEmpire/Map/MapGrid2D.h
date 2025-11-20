@@ -44,6 +44,10 @@ struct FMapCell
     /** Has this cell been seen (via vision)? */
     UPROPERTY(VisibleAnywhere, BlueprintReadWrite, Category="Cell")
     bool bVieved = false;
+
+    /** Optional ore tag present in this cell (separate from background/object). Empty = no ore. */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Cell")
+    FGameplayTag OreTag;
 };
 
 /**
@@ -73,16 +77,24 @@ public:
 	bool AddOrUpdateObjectAt(int32 X, int32 Y, const FGameplayTag& ObjectTag, int32 Durability);
 
 	/** Remove object from a cell (clears tag and durability) */
-	UFUNCTION(BlueprintCallable, Category="MapGrid")
-	bool RemoveObjectAt(int32 X, int32 Y);
+    UFUNCTION(BlueprintCallable, Category="MapGrid")
+    bool RemoveObjectAt(int32 X, int32 Y);
 
 	/** Get background tag (false if out of bounds) */
-	UFUNCTION(BlueprintPure, Category="MapGrid")
-	bool GetBackgroundAt(int32 X, int32 Y, FGameplayTag& OutBackgroundTag) const;
+    UFUNCTION(BlueprintPure, Category="MapGrid")
+    bool GetBackgroundAt(int32 X, int32 Y, FGameplayTag& OutBackgroundTag) const;
 
 	/** Get object tag and durability (false if no object or out of bounds) */
     UFUNCTION(BlueprintPure, Category="MapGrid")
     bool GetObjectAt(int32 X, int32 Y, FGameplayTag& OutObjectTag, int32& OutDurability) const;
+
+    /** Set ore tag at a cell (empty tag clears ore). */
+    UFUNCTION(BlueprintCallable, Category="MapGrid|Ore")
+    bool SetOreAt(int32 X, int32 Y, const FGameplayTag& InOreTag);
+
+    /** Get ore tag at a cell (false if out of bounds). */
+    UFUNCTION(BlueprintPure, Category="MapGrid|Ore")
+    bool GetOreAt(int32 X, int32 Y, FGameplayTag& OutOreTag) const;
 
     /** Set the actor occupant at a cell (nullptr to clear). */
     UFUNCTION(BlueprintCallable, Category="MapGrid")
