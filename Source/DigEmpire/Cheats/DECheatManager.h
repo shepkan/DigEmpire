@@ -23,4 +23,8 @@ public:
     /** Convenience macro: pumps speed and vision for testing. Usage: Cheat_GodMode */
     UFUNCTION(Exec)
     void Cheat_GodMode();
+
+    /** Advances map generation by one step and forces full redraw ignoring vision. Usage: Cheat_NextCaveGenerationStep */
+    UFUNCTION(Exec)
+    void Cheat_NextCaveGenerationStep();
 };

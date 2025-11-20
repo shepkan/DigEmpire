@@ -44,6 +44,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="MapGrid|Generation")
     TArray<TObjectPtr<UMapGenerationStepDataBase>> GenerationSteps;
 
+    /** If true, runs all generation steps automatically inside InitializeAndBuild. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="MapGrid|Generation")
+    bool bAutoGenerate = true;
+
 	/** Map height (in cells). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="MapGrid|Init", meta=(ClampMin="1"))
 	int32 MapSizeY = 64;
@@ -98,9 +102,13 @@ public:
     UFUNCTION(BlueprintCallable, Category="MapGrid|Access")
     bool DamageObjectAt(int32 X, int32 Y, int32 Damage, bool& bOutDestroyed);
 
-	/** Builds or rebuilds the map using current settings and broadcasts the bus event. */
-	UFUNCTION(BlueprintCallable, Category="MapGrid|Init")
-	void InitializeAndBuild();
+    /** Builds or rebuilds the map using current settings and broadcasts the bus event. */
+    UFUNCTION(BlueprintCallable, Category="MapGrid|Init")
+    void InitializeAndBuild();
+
+    /** Execute the next configured generation step (does nothing if none left). */
+    UFUNCTION(BlueprintCallable, Category="MapGrid|Generation")
+    void ExecuteNextGenerationStep();
 
 	/** Returns the underlying map object (can be null). */
     UFUNCTION(BlueprintPure, Category="MapGrid|Access")
@@ -120,8 +128,16 @@ protected:
 
 private:
 	/** Owned map object. */
-	UPROPERTY(Transient)
-	TObjectPtr<UMapGrid2D> MapInstance = nullptr;
+    UPROPERTY(Transient)
+    TObjectPtr<UMapGrid2D> MapInstance = nullptr;
+
+    /** Index of the next generation step to execute (0..GenerationSteps.Num()). */
+    UPROPERTY(Transient)
+    int32 CurrentGenerationStep = 0;
+
+    /** Cached zone labels passed through generation steps across calls. */
+    UPROPERTY(Transient)
+    TArray<int32> ZoneLabelsCache;
 
     void FillBackground();
     void BroadcastMapReady();  // <-- Event Bus publisher

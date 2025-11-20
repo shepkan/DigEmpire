@@ -115,18 +115,48 @@ void UMapGrid2DComponent::InitializeAndBuild()
     // Fill and build borders.
     FillBackground();
 
-    // Execute configured generation steps in order
-    TArray<int32> ZoneLabels;
-    for (const UMapGenerationStepDataBase* Step : GenerationSteps)
+    // Execute configured generation steps automatically if enabled
+    ZoneLabelsCache.Reset();
+    CurrentGenerationStep = 0;
+    if (bAutoGenerate)
     {
-        if (Step)
+        for (const UMapGenerationStepDataBase* Step : GenerationSteps)
         {
-            Step->ExecuteGenerationStep(MapInstance, GetWorld(), ZoneLabels);
+            if (Step)
+            {
+                Step->ExecuteGenerationStep(MapInstance, GetWorld(), ZoneLabelsCache);
+                ++CurrentGenerationStep;
+            }
         }
     }
 
     // Notify via Event Bus.
     BroadcastMapReady();
+}
+
+void UMapGrid2DComponent::ExecuteNextGenerationStep()
+{
+    // Ensure map exists and initialized (without running steps)
+    if (!MapInstance)
+    {
+        MapInstance = NewObject<UMapGrid2D>(this);
+        const int32 SafeSizeX = FMath::Max(1, MapSizeX);
+        const int32 SafeSizeY = FMath::Max(1, MapSizeY);
+        MapInstance->Initialize(SafeSizeX, SafeSizeY);
+        FillBackground();
+        ZoneLabelsCache.Reset();
+        CurrentGenerationStep = 0;
+    }
+
+    if (!GetWorld()) return;
+    if (CurrentGenerationStep < GenerationSteps.Num())
+    {
+        if (const UMapGenerationStepDataBase* Step = GenerationSteps[CurrentGenerationStep])
+        {
+            Step->ExecuteGenerationStep(MapInstance, GetWorld(), ZoneLabelsCache);
+        }
+        ++CurrentGenerationStep;
+    }
 }
 
 

@@ -7,6 +7,7 @@
 #include "TileTextureSet.h"
 #include "MapGrid2DComponent.h"
 #include "MapGrid2D.h"
+#include "DigEmpire/BusEvents/CharacterGridVisionMessages.h"
 
 #include "DigEmpire/BusEvents/MapGrid2DMessages.h"
 #include "DigEmpire/BusEvents/CharacterGridVisionMessages.h"
@@ -453,4 +454,62 @@ FTransform AMapSpriteRenderer::BuildInstanceTransform(int32 GridX, int32 GridY, 
 	T.SetRotation(FQuat::Identity);
 	T.SetScale3D(FVector(Scale, Scale, 1.f));
 	return T;
+}
+
+void AMapSpriteRenderer::RebuildAllFromMap(UMapGrid2DComponent* InMapSource)
+{
+    if (InMapSource)
+    {
+        MapSource = InMapSource;
+    }
+    if (!TextureSet || !MapSource || !MapSource->IsMapReady())
+    {
+        return;
+    }
+
+    ClearAll();
+    if (IsAtlasEnabled())
+    {
+        EnsureObjectAtlasHISM();
+    }
+
+    const FIntPoint Size = MapSource->GetSize();
+    FGridCellWithCoord Entry;
+    for (int32 y = 0; y < Size.Y; ++y)
+    {
+        for (int32 x = 0; x < Size.X; ++x)
+        {
+            Entry.Coord = FIntPoint(x, y);
+            if (!MapSource->GetCell(x, y, Entry.Cell)) continue;
+
+            if (UTexture2D* BgTex = TextureSet->FindBackgroundTexture(Entry.Cell.BackgroundTag))
+            {
+                if (auto* HISM = GetOrCreateHISMForTexture(BgTex))
+                {
+                    HISM->AddInstance(BuildInstanceTransform(x, y, BackgroundLayer));
+                }
+            }
+
+            if (Entry.Cell.HasObject())
+            {
+                if (!InitialObjectDurability.Contains(Entry.Coord))
+                {
+                    InitialObjectDurability.Add(Entry.Coord, Entry.Cell.ObjectDurability);
+                }
+
+                if (IsAtlasEnabled())
+                {
+                    Atlas_AddOrUpdateObject(Entry);
+                }
+                else if (UTexture2D* ObjTex = TextureSet->FindObjectTexture(Entry.Cell.ObjectTag))
+                {
+                    if (auto* HISM = GetOrCreateHISMForTexture(ObjTex))
+                    {
+                        const int32 NewIndex = HISM->AddInstance(BuildInstanceTransform(x, y, ObjectLayer));
+                        ObjectInstances.FindOrAdd(Entry.Coord) = { HISM, NewIndex };
+                    }
+                }
+            }
+        }
+    }
 }

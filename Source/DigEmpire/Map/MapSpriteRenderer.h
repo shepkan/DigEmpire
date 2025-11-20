@@ -187,4 +187,9 @@ private:
 
     /** Compute current DamageDecal stage based on thresholds and cached initial durability. */
     int32 ComputeDamageDecalIndex(const FIntPoint& Cell, int32 CurrentDurability) const;
+
+public:
+    /** Rebuild rendering for all cells from the map (ignores vision). */
+    UFUNCTION(BlueprintCallable, Category="Rendering")
+    void RebuildAllFromMap(class UMapGrid2DComponent* InMapSource);
 };
