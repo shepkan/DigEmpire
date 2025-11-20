@@ -166,7 +166,8 @@ bool UZoneConnectivityFixer::Generate(UMapGrid2D* MapGrid,
                 if (ZoneLabels[id] != ZoneId) continue;
                 if (!Open[id]) continue;
                 const int c = Comp[id];
-                if (c >= 0 && !compConnected.IsValidIndex(c) ? true : !compConnected[c])
+                // Draw if component index is invalid or not connected
+                if (c < 0 || !compConnected.IsValidIndex(c) || !compConnected[c])
                 {
                     const FVector P(x * DebugTileSizeUU, y * DebugTileSizeUU, DebugZOffset);
                     DrawDebugSphere(World, P, DebugSphereRadiusUU, 12, FColor::Red, DebugLifetime <= 0.f, DebugLifetime);
