@@ -319,26 +319,21 @@ void UZoneConnectivityFixer::BuildMasksForZone(UMapGrid2D* Map,
 
         // Object check
         FGameplayTag Obj; int32 Dur=0; const bool bHasObj = Map->GetObjectAt(x,y,Obj,Dur);
-        if (bHasObj && ImmutableObjectTags.Contains(Obj))
+        if (!bHasObj || Dur <= 0)
         {
-            // Check zone-boundary adjacency (wall between zones) -> immutable
-            bool bBetweenZones = false;
-            if (x>0 && Labels[Idx(x-1,y,W)]!=ZoneId) bBetweenZones=true;
-            if (x<W-1 && Labels[Idx(x+1,y,W)]!=ZoneId) bBetweenZones=true;
-            if (y>0 && Labels[Idx(x,y-1,W)]!=ZoneId) bBetweenZones=true;
-            if (y<H-1 && Labels[Idx(x,y+1,W)]!=ZoneId) bBetweenZones=true;
-            if (bBetweenZones || RoomWalls.Contains(FIntPoint(x,y)))
-            {
-                ImmWall[id]=1; // immutable wall
-            }
-            else
-            {
-                MutWall[id]=1; // mutable wall inside the zone
-            }
+            Open[id] = 1; // truly empty
+            continue;
+        }
+
+        // Immutable tags must never be removed
+        if (ImmutableObjectTags.Contains(Obj) || RoomWalls.Contains(FIntPoint(x,y)))
+        {
+            ImmWall[id] = 1;
         }
         else
         {
-            Open[id]=1; // empty cell
+            // Any other object inside the zone is a candidate for carving
+            MutWall[id] = 1;
         }
     }
 }
