@@ -163,16 +163,14 @@ bool UZoneConnectivityFixer::Generate(UMapGrid2D* MapGrid,
             for (int32 x = 0; x < W; ++x)
             {
                 const int id = Idx(x, y, W);
-                // Skip cells that are not in the current zone and any cells without a zone label
-                if (ZoneLabels[id] < 0 || ZoneLabels[id] != ZoneId) continue;
                 if (!Open[id]) continue;
                 const int c = Comp[id];
                 // Draw if component index is invalid or not connected
                 if (c < 0 || !compConnected.IsValidIndex(c) || !compConnected[c])
                 {
                     const FVector P(x * DebugTileSizeUU, y * DebugTileSizeUU, DebugZOffset);
-                    DrawDebugSphere(World, P, DebugSphereRadiusUU, 12, FColor::Red, DebugLifetime <= 0.f, DebugLifetime);
-                }
+                   DrawDebugSphere(World, P, DebugSphereRadiusUU, 12, FColor::Red, DebugLifetime <= 0.f, DebugLifetime);
+                } 
             }
         }
     }
