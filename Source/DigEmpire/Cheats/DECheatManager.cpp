@@ -25,6 +25,11 @@ void UDECheatManager::Cheat_SetVisionRadiusCells(int32 NewRadius)
 
     if (UCharacterGridVisionComponent* Vision = Pawn->FindComponentByClass<UCharacterGridVisionComponent>())
     {
+        if (Vision->bVisionLockedByCheat)
+        {
+            // Ignore manual radius changes while max-visibility cheat is active
+            return;
+        }
         Vision->VisionRadiusCells = FMath::Max(0, NewRadius);
     }
 }
@@ -53,7 +58,7 @@ void UDECheatManager::Cheat_GodMode()
 {
     // Pump speed and vision to high values for testing.
     Cheat_SetMaxSpeed(800.f);
-    Cheat_SetVisionRadiusCells(100);
+    Cheat_SetMaxVisibility(true);
 }
 
 void UDECheatManager::Cheat_NextCaveGenerationStep()
@@ -91,5 +96,33 @@ void UDECheatManager::Cheat_NextCaveGenerationStep()
     if (Renderer)
     {
         Renderer->RebuildAllFromMap(MapComp);
+    }
+}
+
+void UDECheatManager::Cheat_SetMaxVisibility(bool bEnable)
+{
+    APlayerController* PC = GetOuterAPlayerController();
+    if (!PC)
+    {
+        return;
+    }
+
+    APawn* Pawn = PC->GetPawn();
+    if (!Pawn)
+    {
+        return;
+    }
+
+    if (UCharacterGridVisionComponent* Vision = Pawn->FindComponentByClass<UCharacterGridVisionComponent>())
+    {
+        if (bEnable)
+        {
+            // Use a high but reasonable radius to avoid excessive cost
+            Vision->Cheat_LockMaxVisibility(100);
+        }
+        else
+        {
+            Vision->Cheat_UnlockVisibility();
+        }
     }
 }

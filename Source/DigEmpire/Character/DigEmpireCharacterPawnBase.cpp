@@ -4,6 +4,7 @@
 #include "DigEmpireCharacterPawnBase.h"
 
 #include "DigEmpire/Character/DigComponent.h"
+#include "DigEmpire/Character/DwarfLightComponent.h"
 
 
 // Sets default values
@@ -13,6 +14,7 @@ ADigEmpireCharacterPawnBase::ADigEmpireCharacterPawnBase()
     PrimaryActorTick.bCanEverTick = true;
 
     DigComponent = CreateDefaultSubobject<UDigComponent>(TEXT("DigComponent"));
+    DwarfLightComponent = CreateDefaultSubobject<UDwarfLightComponent>(TEXT("DwarfLightComponent"));
 }
 
 // Called when the game starts or when spawned

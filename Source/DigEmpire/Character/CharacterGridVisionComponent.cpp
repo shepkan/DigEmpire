@@ -18,6 +18,26 @@ UCharacterGridVisionComponent::UCharacterGridVisionComponent()
     FirstSeenChannel = TAG_Character_Vision_FirstSeen;
 }
 
+void UCharacterGridVisionComponent::Cheat_LockMaxVisibility(int32 LockedRadius)
+{
+    if (!bVisionLockedByCheat)
+    {
+        VisionRadiusBeforeCheat = VisionRadiusCells;
+    }
+    bVisionLockedByCheat = true;
+    VisionRadiusCells = FMath::Max(0, LockedRadius);
+}
+
+void UCharacterGridVisionComponent::Cheat_UnlockVisibility()
+{
+    bVisionLockedByCheat = false;
+    if (VisionRadiusBeforeCheat >= 0)
+    {
+        VisionRadiusCells = VisionRadiusBeforeCheat;
+    }
+    VisionRadiusBeforeCheat = -1;
+}
+
 void UCharacterGridVisionComponent::BeginPlay()
 {
     Super::BeginPlay();
@@ -86,6 +106,7 @@ void UCharacterGridVisionComponent::DoVisionTick()
     Payload.SourceActor = GetOwner();
     Payload.Center = FIntPoint(CenterX, CenterY);
     Payload.RadiusCells = R;
+    Payload.RadiusLayers.SetNum(R + 1);
 
     // Iterate square bounds and filter by euclidean distance
     const int32 MinX = CenterX - R;
@@ -120,7 +141,15 @@ void UCharacterGridVisionComponent::DoVisionTick()
             FGridCellWithCoord Entry;
             Entry.Coord = FIntPoint(x, y);
             MapComponent->GetCell(x, y, Entry.Cell); // if fails, leaves default cell
-            Payload.Cells.Add(Entry);
+
+            const int32 d2 = dx*dx + dy*dy;
+            int32 RingIndex = 0;
+            if (d2 > 0)
+            {
+                RingIndex = FMath::CeilToInt(FMath::Sqrt(static_cast<float>(d2)));
+                RingIndex = FMath::Clamp(RingIndex, 0, R);
+            }
+            Payload.RadiusLayers[RingIndex].Cells.Add(Entry);
 
             if (!bWasViewed)
             {

@@ -27,4 +27,8 @@ public:
     /** Advances map generation by one step and forces full redraw ignoring vision. Usage: Cheat_NextCaveGenerationStep */
     UFUNCTION(Exec)
     void Cheat_NextCaveGenerationStep();
+
+    /** Toggle max-visibility cheat lock. Usage: Cheat_SetMaxVisibility true/false */
+    UFUNCTION(Exec)
+    void Cheat_SetMaxVisibility(bool bEnable);
 };

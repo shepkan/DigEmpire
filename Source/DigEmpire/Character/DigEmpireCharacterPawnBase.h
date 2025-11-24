@@ -7,6 +7,7 @@
 #include "DigEmpireCharacterPawnBase.generated.h"
 
 class UDigComponent;
+class UDwarfLightComponent;
 
 UCLASS()
 class DIGEMPIRE_API ADigEmpireCharacterPawnBase : public APawn
@@ -34,6 +35,9 @@ private:
 
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta=(AllowPrivateAccess="true"))
     TObjectPtr<UDigComponent> DigComponent;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta=(AllowPrivateAccess="true"))
+    TObjectPtr<UDwarfLightComponent> DwarfLightComponent;
 
     // Dig input handlers
     void OnDigUpPressed();

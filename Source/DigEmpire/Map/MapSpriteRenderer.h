@@ -11,24 +11,13 @@ class UHierarchicalInstancedStaticMeshComponent;
 class UMaterialInterface;
 class UTexture2D;
 class UStaticMesh;
-class UTileTextureSet;
 class UMapGrid2DComponent;
 struct FGridCellWithCoord;
 
-/** Mapping from grid cell to HISM + instance index for object layer. */
-USTRUCT()
-struct FInstanceRef
-{
-	GENERATED_BODY()
-	
-    TObjectPtr<UHierarchicalInstancedStaticMeshComponent> Comp = nullptr;
-    int32 Index = INDEX_NONE;
-};
-
 /**
- * Actor that renders a 2D grid using instanced meshes (quads) and textures
- * resolved from a TileTextureSet. It listens to the "map ready" message and
- * renders when the map is available.
+ * Actor that renders a 2D grid using instanced meshes (quads) driven by
+ * texture atlases (background and objects). It listens to the "map ready"
+ * and update messages and renders when data is available.
  */
 UCLASS(BlueprintType, Blueprintable)
 class AMapSpriteRenderer : public AActor
@@ -45,10 +34,6 @@ public:
     /** Event Bus channel to listen for first-seen cells (must match the publisher). Read-only in editor. */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Map|Events")
     FGameplayTag FirstSeenChannel;
-
-	/** Data asset with textures for backgrGound/object tags. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Rendering")
-	TObjectPtr<UTileTextureSet> TextureSet = nullptr;
 
 	/** Base quad mesh (e.g., /Engine/BasicShapes/Plane). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Rendering")
@@ -93,9 +78,6 @@ protected:
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
-	/** Per-texture HISM cache to avoid creating a new component per instance. Key = Texture pointer. */
-	UPROPERTY(Transient)
-	TMap<TObjectPtr<UTexture2D>, TObjectPtr<UHierarchicalInstancedStaticMeshComponent>> TextureToHISM;
 
     /** Listener handle for first-seen messages. */
     FGameplayMessageListenerHandle FirstSeenHandle;
@@ -103,17 +85,15 @@ private:
     /** Listener handle for cells-updated messages. */
     FGameplayMessageListenerHandle CellsUpdatedHandle;
 
-    UPROPERTY(Transient)
-    TMap<FIntPoint, FInstanceRef> ObjectInstances;
+    // ===== Atlas rendering (background + object) =====
 
-    // ===== Atlas + Pool path for object layer =====
-    /** If true, render object layer via a single atlas HISM with per-instance custom data. */
+    /** Unified texture atlas (background + objects). */
     UPROPERTY(EditAnywhere, Category="Rendering|Atlas")
-    bool bUseObjectAtlas = false;
+    TObjectPtr<UTexture2D> AtlasTexture = nullptr;
 
-    /** Texture atlas for objects. Must match TileBaseMaterial expectations. */
+    /** GameplayTag -> SpriteIndex mapping in the background atlas. */
     UPROPERTY(EditAnywhere, Category="Rendering|Atlas")
-    TObjectPtr<UTexture2D> ObjectAtlasTexture = nullptr;
+    TMap<FGameplayTag, int32> BackgroundAtlasIndices;
 
     /** GameplayTag -> SpriteIndex mapping in the atlas. Configure in editor. */
     UPROPERTY(EditAnywhere, Category="Rendering|Atlas")
@@ -127,28 +107,33 @@ private:
     UPROPERTY(EditAnywhere, Category="Rendering|Damage", meta=(ClampMin="0.0", ClampMax="100.0"))
     TArray<float> DamageDecalThresholdsPercent;
 
-    /** HISM used for atlas-based object rendering. */
+    /** Unified HISM used for atlas-based rendering (background + objects). */
     UPROPERTY(Transient)
-    TObjectPtr<UHierarchicalInstancedStaticMeshComponent> ObjectAtlasHISM = nullptr;
+    TObjectPtr<UHierarchicalInstancedStaticMeshComponent> AtlasHISM = nullptr;
 
-    /** Free slots pool for atlas HISM. */
+    /** Free slots pool for the unified atlas HISM. */
     UPROPERTY(Transient)
-    TArray<int32> ObjectFreeSlots;
+    TArray<int32> AtlasFreeSlots;
 
-    /** Cell -> atlas index mapping. */
+    /** Cell -> atlas index mapping for background. */
+    UPROPERTY(Transient)
+    TMap<FIntPoint, int32> BackgroundCellToAtlasIndex;
+
+    /** Cell -> atlas index mapping for objects. */
     UPROPERTY(Transient)
     TMap<FIntPoint, int32> CellToAtlasIndex;
 
-    /** Atlas index -> cell mapping. */
+    /** Atlas index -> cell mapping for background. */
+    UPROPERTY(Transient)
+    TMap<int32, FIntPoint> BackgroundAtlasIndexToCell;
+
+    /** Atlas index -> cell mapping for objects. */
     UPROPERTY(Transient)
     TMap<int32, FIntPoint> AtlasIndexToCell;
 
     /** Cache of initial object durability per cell for damage % calculations. */
     UPROPERTY(Transient)
     TMap<FIntPoint, int32> InitialObjectDurability;
-
-	/** Find or create a HISM for a given texture (creates a MID with that texture). */
-	UHierarchicalInstancedStaticMeshComponent* GetOrCreateHISMForTexture(UTexture2D* Texture);
 
 	/** Build transform for a tile at grid (X,Y) placed on a given layer index. */
 	FTransform BuildInstanceTransform(int32 GridX, int32 GridY, int32 LayerIndex) const;
@@ -169,17 +154,13 @@ private:
     /** Handle cells updated payload. */
     void OnCellsUpdated(const struct FMapCellsUpdatedMessage& Msg);
 
-    /** Ensure an object instance exists (and matches current tag/texture) for this cell. */
-    void AddOrUpdateObjectInstance(const FGridCellWithCoord& Entry);
-
-    /** Remove object instance for this cell if it exists. */
-    void RemoveObjectInstanceAt(const FIntPoint& CellCoord);
-
     // ===== Atlas helpers =====
-    bool IsAtlasEnabled() const { return bUseObjectAtlas && ObjectAtlasTexture != nullptr; }
-    void EnsureObjectAtlasHISM();
+    void EnsureAtlasHISM();
+    int32 GetBackgroundAtlasIndex(const FGameplayTag& Tag) const;
     int32 GetObjectAtlasIndex(const FGameplayTag& Tag) const;
+    void Atlas_AddOrUpdateBackground(const FGridCellWithCoord& Entry);
     void Atlas_AddOrUpdateObject(const FGridCellWithCoord& Entry);
+    void Atlas_RemoveBackgroundAt(const FIntPoint& CellCoord);
     void Atlas_RemoveObjectAt(const FIntPoint& CellCoord);
 
     /** Resolve Ore index for a given object tag (0 if unmapped). */

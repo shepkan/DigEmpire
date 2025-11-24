@@ -33,6 +33,18 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Vision", meta=(ClampMin="0"))
     int32 VisionRadiusCells = 3;
 
+    /** If true, only the max-visibility cheat may change vision radius. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Vision|Cheat")
+    bool bVisionLockedByCheat = false;
+
+    /** Apply cheat lock with a target radius. Only cheat may modify while locked. */
+    UFUNCTION(BlueprintCallable, Category="Vision|Cheat")
+    void Cheat_LockMaxVisibility(int32 LockedRadius);
+
+    /** Remove cheat lock, allowing normal systems to change vision again. */
+    UFUNCTION(BlueprintCallable, Category="Vision|Cheat")
+    void Cheat_UnlockVisibility();
+
     /** How often to publish vision updates (seconds). */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Vision", meta=(ClampMin="0.01"))
     float VisionIntervalSeconds = 0.25f;
@@ -61,4 +73,7 @@ private:
 
     /** Helper: convert world location to grid float coords. */
     FVector2D WorldToGridFloat(const FVector& WorldLocation) const;
+
+    /** Previous radius saved when cheat lock is enabled. */
+    int32 VisionRadiusBeforeCheat = -1;
 };
