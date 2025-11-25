@@ -7,6 +7,7 @@
 
 class UMapGrid2DComponent;
 class UGridMovementComponent;
+class UDigOreLogicSettings;
 
 // Fired when a dig tick lands a hit on a cell. Provides world hit position (cell center).
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FDigHitSignature, FVector, HitWorldPosition);
@@ -39,6 +40,10 @@ public:
     /** Movement component to block while digging (auto-found if null). */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Dig")
     TObjectPtr<UGridMovementComponent> MovementComponent = nullptr;
+
+    /** Optional: settings that map ore tags to logic executed on block destruction. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Dig|OreLogic")
+    TObjectPtr<UDigOreLogicSettings> OreLogicSettings = nullptr;
 
     /** World size of one grid cell used for grid math (read-only; shared project constant). */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Dig", meta=(ClampMin="1"))

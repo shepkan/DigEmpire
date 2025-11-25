@@ -10,6 +10,8 @@
 #include "DigEmpire/Map/MapGrid2D.h"
 #include "DigEmpire/BusEvents/CharacterGridVisionMessages.h"
 #include "DigEmpire/Tags/DENativeTags.h"
+#include "DigOreLogicSettings.h"
+#include "DigOreLogic.h"
 
 UDigComponent::UDigComponent()
 {
@@ -151,6 +153,19 @@ void UDigComponent::DoDigTick()
     // Apply damage if any object exists (best-effort)
     bool bDestroyed = false;
     MapComponent->DamageObjectAt(GX, GY, DamagePerTick, bDestroyed);
+
+    // If destroyed, execute ore-specific logic from settings
+    if (bDestroyed && OreLogicSettings)
+    {
+        FGameplayTag OreTag;
+        if (MapComponent->GetOreAt(GX, GY, OreTag) && OreTag.IsValid())
+        {
+            if (UDigOreLogicBase* Logic = OreLogicSettings->FindLogic(OreTag))
+            {
+                Logic->Execute(GetOwner(), MapComponent, GX, GY, OreTag);
+            }
+        }
+    }
 
     // Always broadcast the hit event, even if no object was present
     OnDigHit.Broadcast(HitWorld);

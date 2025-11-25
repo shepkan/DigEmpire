@@ -32,6 +32,10 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Light")
     bool bDecayEnabled = true;
 
+    /** Adds light power and applies vision/threshold updates. */
+    UFUNCTION(BlueprintCallable, Category="Light")
+    void AddLightPower(float Amount);
+
 
 protected:
     virtual void BeginPlay() override;

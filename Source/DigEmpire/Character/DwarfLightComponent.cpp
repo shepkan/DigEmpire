@@ -104,6 +104,16 @@ void UDwarfLightComponent::ApplyVisionFromLight()
     }
 }
 
+void UDwarfLightComponent::AddLightPower(float Amount)
+{
+    const float OldPower = LightPower;
+    LightPower = FMath::Clamp(LightPower + Amount, 0.f, 100.f);
+    if (!FMath::IsNearlyEqual(OldPower, LightPower))
+    {
+        ApplyVisionFromLight();
+    }
+}
+
 void UDwarfLightComponent::WriteRadiusToMPC(int32 Radius)
 {
     if (!Settings)
