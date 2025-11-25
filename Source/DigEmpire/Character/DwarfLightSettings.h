@@ -5,6 +5,8 @@
 #include "Engine/DataAsset.h"
 #include "DwarfLightSettings.generated.h"
 
+class UMaterialParameterCollection;
+
 USTRUCT(BlueprintType)
 struct FDwarfLightVisibilityConfig
 {
@@ -13,10 +15,6 @@ struct FDwarfLightVisibilityConfig
     /** Vision radius (in cells) to apply at or above the threshold. */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Light")
     int32 VisionRadius = 0;
-
-    /** Per-ring luminance: index 0=center, 1=ring1, ..., size should be >= VisionRadius+1. */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Light")
-    TArray<float> LuminanceByRing;
 };
 
 /**
@@ -44,6 +42,18 @@ public:
      */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Light")
     TMap<int32, FDwarfLightVisibilityConfig> VisibilityRanges;
+
+    /** If true, write computed vision radius to a Material Parameter Collection. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Light|MPC")
+    bool bWriteRadiusToMPC = true;
+
+    /** Target Material Parameter Collection that will receive the vision radius. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Light|MPC")
+    TObjectPtr<UMaterialParameterCollection> VisionRadiusMPC = nullptr;
+
+    /** Scalar parameter name inside the MPC used for vision radius. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Light|MPC")
+    FName VisionRadiusParamName = TEXT("VisionRadius");
 
     /** Find the best config for a given LightPower (highest threshold <= Power). */
     const FDwarfLightVisibilityConfig* FindBestConfig(float Power) const

@@ -10,7 +10,6 @@
 
 #include "DigEmpire/BusEvents/MapGrid2DMessages.h"
 #include "DigEmpire/BusEvents/CharacterGridVisionMessages.h"
-#include "DigEmpire/BusEvents/LuminanceMessages.h"
 #include "DigEmpire/Tags/DENativeTags.h"
 
 AMapSpriteRenderer::AMapSpriteRenderer()
@@ -26,7 +25,6 @@ AMapSpriteRenderer::AMapSpriteRenderer()
     // Default event channel for first-seen cells
     FirstSeenChannel = TAG_Character_Vision_FirstSeen;
     CellsUpdatedChannel = TAG_Map_CellsUpdated;
-    LuminanceChannel = TAG_Render_LuminanceUpdate;
 }
 
 void AMapSpriteRenderer::BeginPlay()
@@ -44,9 +42,6 @@ void AMapSpriteRenderer::BeginPlay()
     // Subscribe to cells-updated to reflect object changes
     SetupCellsUpdatedSubscription();
 
-    // Subscribe to luminance updates
-    SetupLuminanceSubscription();
-
     // Pre-create unified atlas HISM if texture is configured
     EnsureAtlasHISM();
 }
@@ -61,10 +56,6 @@ void AMapSpriteRenderer::EndPlay(const EEndPlayReason::Type EndPlayReason)
     if (CellsUpdatedHandle.IsValid())
     {
         UGameplayMessageSubsystem::Get(this).UnregisterListener(CellsUpdatedHandle);
-    }
-    if (LuminanceHandle.IsValid())
-    {
-        UGameplayMessageSubsystem::Get(this).UnregisterListener(LuminanceHandle);
     }
     Super::EndPlay(EndPlayReason);
 }
@@ -113,21 +104,6 @@ void AMapSpriteRenderer::SetupCellsUpdatedSubscription()
         [this](FGameplayTag, const FMapCellsUpdatedMessage& Msg)
         {
             OnCellsUpdated(Msg);
-        });
-}
-
-void AMapSpriteRenderer::SetupLuminanceSubscription()
-{
-    if (!LuminanceChannel.IsValid())
-    {
-        return;
-    }
-    UGameplayMessageSubsystem& Bus = UGameplayMessageSubsystem::Get(this);
-    LuminanceHandle = Bus.RegisterListener<FLuminanceUpdateMessage>(
-        LuminanceChannel,
-        [this](FGameplayTag, const FLuminanceUpdateMessage& Msg)
-        {
-            OnLuminanceUpdate(Msg);
         });
 }
 
@@ -199,47 +175,13 @@ void AMapSpriteRenderer::EnsureAtlasHISM()
     AtlasHISM->SetMobility(EComponentMobility::Static);
     AtlasHISM->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     AtlasHISM->SetCastShadow(false);
-    // PerInstanceCustomData: 0 SpriteIndex (both), 1 OreIndex (objects), 2 DamageDecal (objects), 3 Luminance
-    AtlasHISM->NumCustomDataFloats = 4;
+    // PerInstanceCustomData: 0 SpriteIndex (both), 1 OreIndex (objects), 2 DamageDecal (objects)
+    AtlasHISM->NumCustomDataFloats = 3;
 
     UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(TileBaseMaterial, this);
     MID->SetTextureParameterValue(TextureParamName, AtlasTexture);
     AtlasHISM->SetMaterial(0, MID);
     AtlasHISM->RegisterComponent();
-}
-
-void AMapSpriteRenderer::OnLuminanceUpdate(const FLuminanceUpdateMessage& Msg)
-{
-    if (!AtlasHISM) return;
-
-    auto ApplyToCell = [this](const FIntPoint& Cell, float Value)
-    {
-        if (int32* BgIdx = BackgroundCellToAtlasIndex.Find(Cell))
-        {
-            AtlasHISM->SetCustomDataValue(*BgIdx, 3, Value, true);
-        }
-        if (int32* ObjIdx = CellToAtlasIndex.Find(Cell))
-        {
-            AtlasHISM->SetCustomDataValue(*ObjIdx, 3, Value, true);
-        }
-    };
-
-    // Apply luminance per visible ring
-    for (int32 RingIdx = 0; RingIdx < Msg.RadiusLayers.Num(); ++RingIdx)
-    {
-        const float Lum = Msg.LuminanceByRing.IsValidIndex(RingIdx) ? Msg.LuminanceByRing[RingIdx] : 1.0f;
-        const FGridCellsRing& Ring = Msg.RadiusLayers[RingIdx];
-        for (const FGridCellWithCoord& Entry : Ring.Cells)
-        {
-            ApplyToCell(Entry.Coord, Lum);
-        }
-    }
-
-    // Reset luminance for cells that left visibility
-    for (const FIntPoint& Cell : Msg.CellsLeftVisibility)
-    {
-        ApplyToCell(Cell, DefaultLuminance);
-    }
 }
 
 int32 AMapSpriteRenderer::GetBackgroundAtlasIndex(const FGameplayTag& Tag) const

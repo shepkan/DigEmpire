@@ -58,10 +58,6 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Vision|Events")
     FGameplayTag FirstSeenChannel;
 
-    /** Event Bus channel to publish luminance updates (read-only in editor). */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Vision|Events")
-    FGameplayTag LuminanceChannel;
-
 protected:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;

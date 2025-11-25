@@ -2,6 +2,8 @@
 
 #include "DwarfLightSettings.h"
 #include "DigEmpire/Character/CharacterGridVisionComponent.h"
+#include "Materials/MaterialParameterCollection.h"
+#include "Materials/MaterialParameterCollectionInstance.h"
 
 UDwarfLightComponent::UDwarfLightComponent()
 {
@@ -80,10 +82,48 @@ void UDwarfLightComponent::ApplyVisionFromLight()
         }
     }
 
-    if (Vision && !Vision->bVisionLockedByCheat && Vision->VisionRadiusCells != TargetRadius)
+    // Only apply effects when threshold value (mapped radius) changes
+    const bool bThresholdChanged = (LastAppliedVisionRadius != TargetRadius);
+    if (bThresholdChanged)
     {
-        Vision->VisionRadiusCells = FMath::Max(0, TargetRadius);
-        // Threshold crossed -> force immediate vision & luminance update
-        Vision->ForceVisionUpdate();
+        // Update vision component if allowed
+        if (Vision && !Vision->bVisionLockedByCheat && Vision->VisionRadiusCells != TargetRadius)
+        {
+            Vision->VisionRadiusCells = FMath::Max(0, TargetRadius);
+            // Threshold crossed -> force immediate vision & luminance update
+            Vision->ForceVisionUpdate();
+        }
+
+        // Update MPC if enabled in settings
+        if (Settings && Settings->bWriteRadiusToMPC)
+        {
+            WriteRadiusToMPC(TargetRadius);
+        }
+
+        LastAppliedVisionRadius = TargetRadius;
+    }
+}
+
+void UDwarfLightComponent::WriteRadiusToMPC(int32 Radius)
+{
+    if (!Settings)
+    {
+        return;
+    }
+
+    if (!Settings->VisionRadiusMPC || Settings->VisionRadiusParamName.IsNone())
+    {
+        return;
+    }
+
+    UWorld* World = GetWorld();
+    if (!World)
+    {
+        return;
+    }
+
+    if (UMaterialParameterCollectionInstance* MPCInstance = World->GetParameterCollectionInstance(Settings->VisionRadiusMPC))
+    {
+        MPCInstance->SetScalarParameterValue(Settings->VisionRadiusParamName, static_cast<float>(FMath::Max(0, Radius)));
     }
 }

@@ -8,10 +8,7 @@
 #include "DigEmpire/Map/MapGrid2DComponent.h"
 #include "DigEmpire/Map/MapGrid2D.h"
 #include "DigEmpire/BusEvents/CharacterGridVisionMessages.h"
-#include "DigEmpire/BusEvents/LuminanceMessages.h"
 #include "DigEmpire/Tags/DENativeTags.h"
-#include "DigEmpire/Character/DwarfLightComponent.h"
-#include "DigEmpire/Character/DwarfLightSettings.h"
 
 UCharacterGridVisionComponent::UCharacterGridVisionComponent()
 {
@@ -19,7 +16,6 @@ UCharacterGridVisionComponent::UCharacterGridVisionComponent()
     bAutoActivate = true;
     VisionChannel = TAG_Character_Vision;
     FirstSeenChannel = TAG_Character_Vision_FirstSeen;
-    LuminanceChannel = TAG_Render_LuminanceUpdate;
 }
 
 void UCharacterGridVisionComponent::Cheat_LockMaxVisibility(int32 LockedRadius)
@@ -50,7 +46,6 @@ void UCharacterGridVisionComponent::BeginPlay()
     // Ensure native defaults even if Blueprint overrides left them empty
     VisionChannel = TAG_Character_Vision;
     FirstSeenChannel = TAG_Character_Vision_FirstSeen;
-    LuminanceChannel = TAG_Render_LuminanceUpdate;
 
     if (VisionIntervalSeconds > 0.f)
     {
@@ -191,50 +186,6 @@ void UCharacterGridVisionComponent::DoVisionTick()
         {
             LeftVisibility.Add(Prev);
         }
-    }
-
-    // Resolve luminance per ring from DwarfLight settings
-    TArray<float> LuminanceByRing;
-    LuminanceByRing.SetNum(Payload.RadiusLayers.Num());
-    for (int32 i = 0; i < LuminanceByRing.Num(); ++i) { LuminanceByRing[i] = 1.0f; }
-
-    UDwarfLightComponent* Light = CachedLight.Get();
-    if (!Light && GetOwner())
-    {
-        Light = GetOwner()->FindComponentByClass<UDwarfLightComponent>();
-        if (Light) { CachedLight = Light; }
-    }
-    if (Light && Light->Settings)
-    {
-        const FDwarfLightVisibilityConfig* Cfg = Light->Settings->FindBestConfig(Light->LightPower);
-        if (Cfg)
-        {
-            // Copy luminance values, pad/truncate to match rings
-            for (int32 i = 0; i < LuminanceByRing.Num(); ++i)
-            {
-                float Val = 1.0f;
-                if (Cfg->LuminanceByRing.IsValidIndex(i))
-                {
-                    Val = Cfg->LuminanceByRing[i];
-                }
-                else if (Cfg->LuminanceByRing.Num() > 0)
-                {
-                    Val = Cfg->LuminanceByRing.Last();
-                }
-                LuminanceByRing[i] = Val;
-            }
-        }
-    }
-
-    // Publish luminance update
-    if (LuminanceChannel.IsValid())
-    {
-        FLuminanceUpdateMessage Lum;
-        Lum.SourceActor = GetOwner();
-        Lum.RadiusLayers = Payload.RadiusLayers;
-        Lum.LuminanceByRing = MoveTemp(LuminanceByRing);
-        Lum.CellsLeftVisibility = MoveTemp(LeftVisibility);
-        UGameplayMessageSubsystem::Get(this).BroadcastMessage(LuminanceChannel, Lum);
     }
 
     LastVisibleCells = MoveTemp(VisibleNow);

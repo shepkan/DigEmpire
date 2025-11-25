@@ -32,6 +32,7 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Light")
     bool bDecayEnabled = true;
 
+
 protected:
     virtual void BeginPlay() override;
     virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
@@ -45,5 +46,10 @@ private:
 
     /** Returns target vision radius for current LightPower based on Settings. */
     int32 ComputeVisionRadiusFor(float Power) const;
-};
 
+    /** Last applied vision radius used to detect threshold crossings. */
+    int32 LastAppliedVisionRadius = INDEX_NONE;
+
+    /** Writes the given radius to the configured Material Parameter Collection. */
+    void WriteRadiusToMPC(int32 Radius);
+};
