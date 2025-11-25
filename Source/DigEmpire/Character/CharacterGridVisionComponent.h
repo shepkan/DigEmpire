@@ -8,6 +8,7 @@
 #include "CharacterGridVisionComponent.generated.h"
 
 class UMapGrid2DComponent;
+class UDwarfLightComponent;
 
 /**
  * Periodically samples owner world position, converts to grid,
@@ -57,6 +58,10 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Vision|Events")
     FGameplayTag FirstSeenChannel;
 
+    /** Event Bus channel to publish luminance updates (read-only in editor). */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Vision|Events")
+    FGameplayTag LuminanceChannel;
+
 protected:
     virtual void BeginPlay() override;
     virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -76,4 +81,15 @@ private:
 
     /** Previous radius saved when cheat lock is enabled. */
     int32 VisionRadiusBeforeCheat = -1;
+
+    /** Last visible cells set (used to compute cells that left visibility). */
+    TSet<FIntPoint> LastVisibleCells;
+
+    /** Cached pointer to owner's light component, if any. */
+    TWeakObjectPtr<UDwarfLightComponent> CachedLight;
+
+public:
+    /** Immediately performs a vision update and publishes messages. */
+    UFUNCTION(BlueprintCallable, Category="Vision")
+    void ForceVisionUpdate();
 };

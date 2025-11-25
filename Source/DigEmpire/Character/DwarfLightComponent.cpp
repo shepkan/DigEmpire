@@ -83,5 +83,7 @@ void UDwarfLightComponent::ApplyVisionFromLight()
     if (Vision && !Vision->bVisionLockedByCheat && Vision->VisionRadiusCells != TargetRadius)
     {
         Vision->VisionRadiusCells = FMath::Max(0, TargetRadius);
+        // Threshold crossed -> force immediate vision & luminance update
+        Vision->ForceVisionUpdate();
     }
 }

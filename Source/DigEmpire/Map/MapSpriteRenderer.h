@@ -13,6 +13,7 @@ class UTexture2D;
 class UStaticMesh;
 class UMapGrid2DComponent;
 struct FGridCellWithCoord;
+struct FLuminanceUpdateMessage;
 
 /**
  * Actor that renders a 2D grid using instanced meshes (quads) driven by
@@ -68,8 +69,12 @@ public:
 	int32 ObjectLayer = 1;
 
 	/** Event Bus channel for cells-updated messages. */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Map|Events")
-	FGameplayTag CellsUpdatedChannel;
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Map|Events")
+    FGameplayTag CellsUpdatedChannel;
+
+    /** Event Bus channel for luminance updates. */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Map|Events")
+    FGameplayTag LuminanceChannel;
 
     // No full rebuild; rendering is event-driven.
 
@@ -84,6 +89,9 @@ private:
 
     /** Listener handle for cells-updated messages. */
     FGameplayMessageListenerHandle CellsUpdatedHandle;
+
+    /** Listener handle for luminance update messages. */
+    FGameplayMessageListenerHandle LuminanceHandle;
 
     // ===== Atlas rendering (background + object) =====
 
@@ -168,6 +176,17 @@ private:
 
     /** Compute current DamageDecal stage based on thresholds and cached initial durability. */
     int32 ComputeDamageDecalIndex(const FIntPoint& Cell, int32 CurrentDurability) const;
+
+    // ===== Luminance =====
+    /** Default luminance for cells not visible. */
+    UPROPERTY(EditAnywhere, Category="Rendering|Luminance")
+    float DefaultLuminance = 0.0f;
+
+    /** Subscribe to luminance updates. */
+    void SetupLuminanceSubscription();
+
+    /** Handle luminance update payload. */
+    void OnLuminanceUpdate(const struct FLuminanceUpdateMessage& Msg);
 
 public:
     /** Rebuild rendering for all cells from the map (ignores vision). */
