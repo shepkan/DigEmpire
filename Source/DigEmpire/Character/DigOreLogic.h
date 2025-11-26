@@ -37,3 +37,21 @@ public:
     virtual void Execute_Implementation(AActor* InstigatorActor, UMapGrid2DComponent* Map, int32 X, int32 Y, FGameplayTag OreTag) override;
 };
 
+/**
+ * Adds resources to player's inventory on ore destruction.
+ */
+UCLASS(BlueprintType, EditInlineNew)
+class UDigOreLogic_AddResource : public UDigOreLogicBase
+{
+    GENERATED_BODY()
+public:
+    /** Resource tag to add; if invalid, falls back to OreTag. */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Resource")
+    FGameplayTag ResourceTag;
+
+    /** Amount to add (>= 0). */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Resource", meta=(ClampMin="0"))
+    int32 Amount = 1;
+
+    virtual void Execute_Implementation(AActor* InstigatorActor, UMapGrid2DComponent* Map, int32 X, int32 Y, FGameplayTag OreTag) override;
+};
